@@ -114,7 +114,7 @@ Inspired by ECS (Elastic Common Schema) to stay standard and Sigma-compatible.
   "ts":         "2026-09-24T15:04:05Z", // event time (UTC)
   "received_at":"2026-09-24T15:04:06Z",
   "agent_id":   "uuid",
-  "host":       { "name": "ubuntu-01", "os": "linux" },
+  "host":       "ubuntu-01",
   "source":     "linux.auth | linux.syslog | nginx.access | windows.security | windows.sysmon | ...",
   "category":   "authentication | network | process | web | iam | file",
   "action":     "login_failed | login_success | sudo | account_created | ...",
@@ -123,15 +123,13 @@ Inspired by ECS (Elastic Common Schema) to stay standard and Sigma-compatible.
   "src_ip":     "203.0.113.7",
   "dst_ip":     null,
   "dst_port":   22,
-  "user":       { "name": "root", "target": null },
-  "process":    { "name": "powershell.exe", "cmdline": "..." },
-  "http":       { "method": "GET", "path": "/?id=1' OR 1=1", "status": 200, "ua": "..." },
+  "user_name":  "root",
   "raw":        "original line",
-  "extra":      { }                     // source-specific fields
+  "extra":      { }                     // source-specific fields (method, src_port, process, http, ...)
 }
 ```
 
-Frequently filtered fields (`ts`, `src_ip`, `action`, `host`, `user`) are real columns; the rest goes into `JSONB` (`process`, `http`, `extra`) with a GIN index if needed.
+Frequently filtered fields (`ts`, `src_ip`, `action`, `host`, `user_name`) are real columns; everything source-specific goes into the `extra` `JSONB` column (with a GIN index if needed). The model is flat and lives in `backend/src/sentinel_core/schema/event.py`.
 
 ## 7. Detection engine
 
@@ -182,8 +180,8 @@ An automated responder that blocks the wrong IP is worse than none. **Non-negoti
 
 ```
 agents(id, name, os, api_key_hash, last_seen_at, status)
-events(event_id PK, ts, agent_id, source, category, action, outcome, severity,
-       src_ip inet, dst_ip inet, dst_port, host, user_name, process jsonb, http jsonb, extra jsonb, raw)
+events(event_id PK, ts, received_at, agent_id, source, category, action, outcome, severity,
+       src_ip inet, dst_ip inet, dst_port, host, user_name, extra jsonb, raw)
         -- partitioned by day on ts; indexes (ts), (src_ip, ts), (action, ts)
 events_dead_letter(id, agent_id, raw, error, received_at)
 rules(id, title, mitre[], severity, definition jsonb, enabled)          -- source of truth: YAML files
