@@ -212,6 +212,7 @@ A SIEM is a prime target; it must be exemplary.
 **Language**: everything is in English — identifiers, comments, commit messages, docs, UI strings, rule titles.
 **Commits**: Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`).
 **Branching**: short-lived branches + PRs into `main`, CI must pass.
+**Documentation**: every PR adds a dated entry to [`DEVLOG.md`](DEVLOG.md) (what, why, how verified, problems, next) and updates this document when a design decision changes (ADR table, §13). New components or setup steps get their own guide (e.g. `lab/README.md`).
 
 To feed the CV with real numbers we measure from the start:
 
