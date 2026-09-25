@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     ingest_max_body_bytes: int = Field(default=8 * 1024 * 1024, gt=0)
     raw_stream_high_watermark: int = Field(default=100_000, gt=0)
 
+    # Normalizer worker: entries per batch, and how long a delivered-but-unacknowledged entry
+    # may sit before another worker takes it over (must exceed the slowest batch).
+    normalizer_batch_size: int = Field(default=100, gt=0)
+    normalizer_claim_idle_ms: int = Field(default=60_000, ge=0)
+
 
 @lru_cache
 def get_settings() -> Settings:

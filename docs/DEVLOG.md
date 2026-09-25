@@ -13,6 +13,48 @@ Entry template:
 
 ---
 
+## 2026-09-25 — M1 (step 4) — Normalizer worker, events and dead letters (PR #5)
+
+**What**
+- `workers/normalizer.py`: consumer-group worker (`events.raw` → Postgres). `process_entry()` is a pure function (entry → `Event` | `DeadLetterRecord` | ignored); `NormalizerWorker` handles Redis and the database. Runs as the `normalizer` compose service (`python -m sentinel_core.workers.normalizer`), scalable with `--scale`.
+- Migration `0002`: `events` table range-partitioned by day on `ts` with a default partition and three indexes, and `events_dead_letter`. Models `EventRecord` / `DeadLetter`.
+- `db/events.py`: idempotent inserts (`ON CONFLICT DO NOTHING`) and `ensure_event_partitions` (daily partitions, guarded by an advisory lock so several workers cannot race).
+- `normalizers/registry.py` (source → normalizer map), `normalizers/dead_letter.py`.
+- `alembic check` now ignores the runtime-created partitions (`include_object`).
+- Test fixtures for real Redis/Postgres moved to `tests/conftest.py` / `tests/support.py`.
+- Docs: ADR 18, ARCHITECTURE §5 step 3, `OPERATIONS.md` (worker section + troubleshooting), `INGESTION_API.md`.
+
+**Why**
+Until now accepted lines just piled up in the stream. This step closes the first half of the vertical slice (agent → API → queue → **events in Postgres**) with the guarantees the detector will rely on: nothing lost, nothing duplicated, nothing dropped silently.
+
+**Design notes**
+- Order of operations: read → write to Postgres (one transaction) → ack + delete from the stream. A crash in between redelivers the batch; idempotent inserts absorb the repeat. Entries abandoned by a crashed consumer are taken over with `XAUTOCLAIM` after `SENTINEL_NORMALIZER_CLAIM_IDLE_MS`.
+- Three outcomes per entry: event; dead letter (malformed line, undecodable entry, source without a normalizer, or a bug in a parser — contained, message truncated to 500 chars, raw truncated to 16 KiB); ignored (well-formed, nothing to model).
+- Agents control the timestamps in their lines, so a default partition guarantees an odd date cannot fail an insert; the worker keeps yesterday..today+7 partitions ready.
+- `ts` is part of the `events` primary key (PostgreSQL requires the partition key in unique constraints). Known edge: an event whose `ts` depends on the receipt year (traditional syslog format without a year) and that is replayed across New Year could be stored twice.
+- `events.normalized` is **not** published yet: nothing would consume it. It is added with the detector, together with its own ack semantics.
+
+**How verified**
+- 90 tests with real Redis and Postgres (66 unit, 24 integration). New: pure classification of every kind of entry; lines become events and entries are deleted; stored fields (`inet`, `jsonb`) round-trip; dead letters keep their context; replays create no duplicates; **database failure leaves entries pending and they are retried**; **a crashed consumer's entries are taken over**; daily and default partitions; partition setup idempotent; the run loop processes entries and stops on request.
+- `ruff`, `mypy --strict` clean.
+- Real stack, end to end (agent key → `POST /v1/ingest` → Redis → worker → Postgres): 7 lines gave 5 events, 1 dead letter, 1 ignored (cron); the username-spoofing line stored the real source IP; the stream was empty afterwards; replaying the batch created no new event and no new dead letter.
+
+**Problems & lessons (both found only by running the real stack)**
+- **Redis read timeout**: the worker blocks 5 s on `XREADGROUP`, and the client's default read timeout is of the same order, so an idle worker dropped its connection and logged a `TimeoutError` every few seconds. The tests blocked 50 ms and could not see it. Fix: explicit `socket_timeout` (15 s) above the blocking time, with a unit test tying the two values together.
+- **Dead letters duplicated on agent retry**: the dedup key was a hash of the whole stream payload, which contains `received_at`; a retried batch is stamped with a new `received_at`, so it produced a new row. The events were fine (their id ignores `received_at`), the dead letters were not. Fix: the key now uses the same identity as `event_id` (agent, source, origin). The first integration test replayed identical objects and missed it; it now retries with a different `received_at`.
+- `inet::text` in Postgres renders `203.0.113.7/32`; tests use `host(src_ip)`.
+- Two long `docker compose up --build` runs appeared to stall for ~10+ minutes and completed normally afterwards; log timestamps show a 16-minute gap inside a script that only sleeps a few seconds, which points at the Mac being suspended rather than at the build. Not investigated further.
+
+**Not done yet / limits**
+- No retention job (dropping old partitions) and no metrics endpoint for the worker.
+- No poison-message handling beyond containment: an entry that always fails to persist would be retried forever.
+- Only `linux.auth` has a normalizer; `nginx.access`, `windows.*` lines are dead-lettered until their normalizers exist.
+- `linux.auth` handles sshd only (no `sudo`/`useradd` yet).
+
+**Next**: the detection engine — first rule types (`match`, `threshold`) and the SSH brute-force rule reading events, emitting alerts (and only then publishing `events.normalized`).
+
+---
+
 ## 2026-09-25 — M1 (step 3) — Postgres agent registry, migrations and admin CLI (PR #4)
 
 **What**

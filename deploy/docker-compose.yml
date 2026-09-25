@@ -46,6 +46,21 @@ services:
         condition: service_healthy
     restart: "no"
 
+  # Consumes events.raw, normalizes, writes events / dead letters. Scale with
+  # `docker compose up -d --scale normalizer=N` (consumer group: each entry goes to one worker).
+  normalizer:
+    build: *app-build
+    command: ["python", "-m", "sentinel_core.workers.normalizer"]
+    environment:
+      <<: *database-url
+      SENTINEL_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   api:
     build: *app-build
     environment:

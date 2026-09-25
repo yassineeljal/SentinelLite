@@ -69,9 +69,9 @@ line are interpreted by the normalizer, not by the API.
 
 One Redis Stream entry per line, single field `data` holding a `RawLog` as JSON
 (`agent_id`, `source`, `origin`, `line`, `received_at`). A batch is written in one `MULTI/EXEC`
-transaction. Consumers (the normalizer) read through a consumer group and must delete entries
-after acknowledging them, otherwise the stream length eventually reaches the watermark and the API
-answers `429`.
+transaction. The normalizer worker consumes the stream through the consumer group `normalizers` and
+deletes each entry after acknowledging it (otherwise the stream length would eventually reach the
+watermark and the API would answer `429`).
 
 ## Managing agents
 
