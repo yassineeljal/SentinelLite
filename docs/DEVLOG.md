@@ -13,6 +13,26 @@ Entry template:
 
 ---
 
+## 2026-09-25 — Follow-ups of the code review of the hardening commit (PR #9)
+
+**What** — `/code-review high` on the hardening commit reported seven findings; three were real defects in my change and are fixed, one is an accepted trade-off, two are documented, one is declined with a reason.
+- **Fixed — duplicate alert on retry** (`engine.py`): a host whose clock runs more than 5 s ahead gets its lines dated by the server receipt time, which is new on every retry of the same batch. Threshold alert ids were built from that time, so each retry stored one more alert for the same attack. The id now uses the *triggering event* (stable across retries).
+- **Fixed — group digest collisions** (`engine.py`): group values were joined with `\x1f` without lengths, so `("a\x1fb", "c")` and `("a", "b\x1fc")` hashed to the same key. Encoding is now length-prefixed (matters under `scope: global`, where it reached across agents).
+- **Fixed — empty strings** (`terminal.py`): `sanitize("")` printed nothing where the old code printed `-`; columns looked shifted. Empty and `None` both show `-`.
+- **Added — invariant test**: `MAX_FUTURE_SKEW < LATE_TOLERANCE_MS`, the coupling behind the clamp that was only implicit.
+- **Documented — global-scope cooldown**: a forged event can start a `global` rule's cooldown, but it has to reach the threshold first, which raises a visible alert. The reviewer's "swallowed" wording overstated it.
+- **Documented — cross-host spraying**: with `scope: agent` the shipped `ssh-bruteforce` does not catch one source spreading failures thinly over several hosts. Accepted trade-off; a `scope: global` rule with multi-agent scenarios is planned for M2.
+- **Declined — evict relative to the receipt clock** instead of the newest entry: it would drop late-arriving events after an agent outage and break replays, which is the point of event-time windows. The small skew plus per-agent scope already closes the attack that was reproduced; the invariant is now tested.
+
+**How verified**: three new tests failed first (retry duplicate, digest collision, empty string) and pass after the fixes; 222 tests with real Redis and Postgres (167 pass without them); `ruff`, `mypy --strict` clean.
+
+**Problems & lessons**
+- Both `/code-review` runs had a narrower scope than intended: the first (default target = current diff) reviewed only the uncommitted `README.md`, the second only the last commit plus the README, because the branches are stacked and the tool diffs against the upstream. The M1 code as a whole has therefore **not** yet had a full quality review; a path-targeted run is the next step.
+- The retry-duplicate bug existed only because the clamp was added in the previous step: a fix that changes which value flows into an identifier needs a check of every identifier derived from it. The earlier retry test only covered past-dated lines.
+- The README findings (pasted chat text, French, describes features that do not exist) concern the author's own uncommitted file and were left alone pending their decision.
+
+---
+
 ## 2026-09-25 — M1 security fixes from the review (PR #8)
 
 **What**

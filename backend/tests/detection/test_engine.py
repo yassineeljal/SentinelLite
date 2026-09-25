@@ -3,9 +3,9 @@ from typing import Any
 from uuid import UUID
 
 from sentinel_core.detection.alerts import Alert
-from sentinel_core.detection.engine import DetectionEngine
+from sentinel_core.detection.engine import MAX_FUTURE_SKEW, DetectionEngine
 from sentinel_core.detection.rules import Rule
-from sentinel_core.detection.store import InMemoryWindowStore
+from sentinel_core.detection.store import LATE_TOLERANCE_MS, InMemoryWindowStore
 from sentinel_core.schema.event import Action, Category, Event, Outcome, Source
 
 AGENT = UUID("11111111-1111-1111-1111-111111111111")
@@ -310,3 +310,43 @@ async def test_future_dates_are_kept_within_the_small_skew_and_clamped_beyond() 
 
     assert within[0].ts == T0 + timedelta(seconds=15)
     assert beyond[0].ts == received  # replaced by the server-side receipt time
+
+
+# --- Follow-ups of the code review of the hardening commit -----------------------------------
+
+
+async def test_a_retried_batch_from_a_fast_clock_host_does_not_duplicate_the_alert() -> None:
+    """The clamp replaces a future date by the receipt time, which is new on every retry. The
+    alert id must not depend on it, or each retry would store one more alert for one attack."""
+    for retry_delay in (10, 400):  # inside the cooldown, and after it
+        eng = engine(brute_force_rule())
+        ids = []
+        for received in (T0 + timedelta(seconds=10), T0 + timedelta(seconds=10 + retry_delay)):
+            for i in range(5):  # a host whose clock runs a minute ahead
+                events = make_event(i, at=60 + i, received_at=received)
+                ids += [a.alert_id for a in await eng.evaluate(events)]
+
+        assert len(set(ids)) == 1, f"retry after {retry_delay}s produced {set(ids)}"
+
+
+async def test_group_values_containing_the_separator_cannot_collide() -> None:
+    rule = brute_force_rule(group_by=["user_name", "host"], scope="global")
+    eng = engine(rule)
+    base = make_event(0, user="a\x1fb")
+    other = make_event(1, user="a")
+
+    # ("a\x1fb", "c") and ("a", "b\x1fc") are different groups: five events split across the
+    # two must not add up to a threshold.
+    for i in range(3):
+        await eng.evaluate(base.model_copy(update={"event_id": f"{i:064x}", "host": "c"}))
+    for i in range(3, 6):
+        alerts = await eng.evaluate(
+            other.model_copy(update={"event_id": f"{i:064x}", "host": "b\x1fc"})
+        )
+        assert alerts == []
+
+
+def test_the_future_skew_stays_below_the_late_tolerance() -> None:
+    """Invariant behind the timestamp clamp: a forged date within the skew must not be able to
+    evict events that are still within the out-of-order tolerance of any window."""
+    assert MAX_FUTURE_SKEW.total_seconds() * 1000 < LATE_TOLERANCE_MS

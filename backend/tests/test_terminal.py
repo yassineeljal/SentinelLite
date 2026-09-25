@@ -37,3 +37,7 @@ def test_no_control_character_survives() -> None:
 
 def test_none_is_shown_as_a_dash() -> None:
     assert sanitize(None) == "-"
+
+
+def test_an_empty_string_is_shown_as_a_dash_like_none() -> None:
+    assert sanitize("") == "-"
