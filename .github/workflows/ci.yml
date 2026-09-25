@@ -45,6 +45,8 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run mypy src tests
       - run: uv run pytest -q
+      - name: Detection benchmark report is up to date
+        run: uv run sentinel bench --check ../docs/BENCHMARK.md
 
   agent:
     runs-on: ubuntu-latest

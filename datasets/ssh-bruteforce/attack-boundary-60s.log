@@ -1,0 +1,7 @@
+# expect: 1
+# description: Five failures spanning exactly 60 seconds: the window bounds are inclusive.
+2026-09-24T15:00:00+00:00 prod-web-01 sshd[2013]: Failed password for root from 203.0.113.61 port 42012 ssh2
+2026-09-24T15:00:15+00:00 prod-web-01 sshd[2014]: Failed password for root from 203.0.113.61 port 42013 ssh2
+2026-09-24T15:00:30+00:00 prod-web-01 sshd[2015]: Failed password for root from 203.0.113.61 port 42014 ssh2
+2026-09-24T15:00:45+00:00 prod-web-01 sshd[2016]: Failed password for root from 203.0.113.61 port 42015 ssh2
+2026-09-24T15:01:00+00:00 prod-web-01 sshd[2017]: Failed password for root from 203.0.113.61 port 42016 ssh2

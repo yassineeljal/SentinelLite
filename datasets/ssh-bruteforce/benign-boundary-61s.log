@@ -1,0 +1,7 @@
+# expect: 0
+# description: Five failures spanning 61 seconds: never five inside any 60-second window.
+2026-09-24T15:00:00+00:00 prod-web-01 sshd[2053]: Failed password for root from 203.0.113.63 port 42052 ssh2
+2026-09-24T15:00:15+00:00 prod-web-01 sshd[2054]: Failed password for root from 203.0.113.63 port 42053 ssh2
+2026-09-24T15:00:30+00:00 prod-web-01 sshd[2055]: Failed password for root from 203.0.113.63 port 42054 ssh2
+2026-09-24T15:00:45+00:00 prod-web-01 sshd[2056]: Failed password for root from 203.0.113.63 port 42055 ssh2
+2026-09-24T15:01:01+00:00 prod-web-01 sshd[2057]: Failed password for root from 203.0.113.63 port 42056 ssh2

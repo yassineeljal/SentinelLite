@@ -1,0 +1,10 @@
+# expect: 1
+# description: Three failures, ten quiet minutes, then a burst of five: old failures do not add up, the burst alone is an attack.
+2026-09-24T15:00:00+00:00 prod-web-01 sshd[2045]: Failed password for root from 203.0.113.64 port 42044 ssh2
+2026-09-24T15:00:05+00:00 prod-web-01 sshd[2046]: Failed password for root from 203.0.113.64 port 42045 ssh2
+2026-09-24T15:00:10+00:00 prod-web-01 sshd[2047]: Failed password for root from 203.0.113.64 port 42046 ssh2
+2026-09-24T15:10:00+00:00 prod-web-01 sshd[2048]: Failed password for root from 203.0.113.64 port 42047 ssh2
+2026-09-24T15:10:02+00:00 prod-web-01 sshd[2049]: Failed password for root from 203.0.113.64 port 42048 ssh2
+2026-09-24T15:10:04+00:00 prod-web-01 sshd[2050]: Failed password for root from 203.0.113.64 port 42049 ssh2
+2026-09-24T15:10:06+00:00 prod-web-01 sshd[2051]: Failed password for root from 203.0.113.64 port 42050 ssh2
+2026-09-24T15:10:08+00:00 prod-web-01 sshd[2052]: Failed password for root from 203.0.113.64 port 42051 ssh2

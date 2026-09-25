@@ -13,6 +13,38 @@ Entry template:
 
 ---
 
+## 2026-09-25 — M2 (step 1) — Detection benchmark and richer scenarios (PR #13)
+
+**Housekeeping** — PRs #11 (agent) and #12 (lab) were merged into `main` on request, in order, each retargeted to `main` first; `main` equals the last branch and its CI is green.
+
+**What**
+- `detection/scenarios.py`: the scenario convention as a library (parse, discover, replay). The pytest harness now uses it, and so does the new command.
+- `sentinel bench` (`bench.py`): replays every scenario like production does (normalizer, then the engine with **all** rules loaded) and renders [`BENCHMARK.md`](BENCHMARK.md): detection rate, exact-count matches, false alerts, per-rule table, per-scenario table with descriptions and any problem. `--output` writes it, `--check` (used by CI) fails if the committed copy is stale, `--throughput` measures the in-memory engine speed (not part of the file: machine-dependent).
+- Datasets grew from 4 files to 19: several attack and benign **variants per rule** (boundary cases at exactly 60 s and 61 s, IPv6, invalid users, two simultaneous sources, attack hidden in ordinary traffic, old failures that must not add up, look-alike account names, cooldown behaviour) plus `datasets/_shared/`: benign traffic that **every** rule must ignore, currently a generated 1994-line "normal day" (`datasets/tools/generate_benign_day.py`, fixed seed, reproduced exactly by a test).
+- Convention hardened: names must start with `attack`/`benign`; an attack must expect ≥ 1 alert, a benign file exactly 0 **from any rule**; alerts of other rules on an attack must be declared with `# also`; a header-looking line with an unknown key is an error (`# expet: 2` cannot silently disable a check).
+- Docs: `BENCHMARK.md` (generated), `DETECTION.md` (convention, benchmark and its limits), ADR 25, `OPERATIONS.md`; CI step `sentinel bench --check`.
+
+**Result** — 2 rules, 12 attack scenarios (12/12 detected, 19/19 scenarios matching their exact alert counts), 7 benign scenarios (0 with a false alert, 358 benign events replayed, 0 false alerts). The in-memory engine does about 55 000 events/s on one core of this Mac (normalize + detect, one run, not end to end).
+
+**How verified**
+- 313 tests with real Redis and Postgres (231 pass, 82 skipped without them). New: the scenario library (headers, typos, layout, shared folder, cross-rule alerts, false positives), the report (counts, determinism, failures visible and exit code), the CLI (`--output`, `--check` stale/missing/tampered), the generator (committed file identical to its output, deterministic, only documentation/private addresses in any dataset), and **every scenario replayed on the Redis store** giving the same alerts as the in-memory reference.
+- **The scenarios have teeth** (mutation checks on `ssh-bruteforce`, each restored): threshold 5 → 3 makes **5 of 7 benign scenarios raise false alerts**; threshold 5 → 8 drops detection to **6/12 (50 %)**; window 60 s → 30 s misses the exact-60 s attack (**11/12**); no cooldown gives wrong alert counts (`expected 3, got 6`).
+
+**Limits, stated in the report itself**
+- The scenarios are curated by the rule author: the rate measures **regressions**, not real-world detection, and "0 false alerts" only covers the benign traffic in `datasets/`.
+- The 1994-line normal day produces only **292 events** today: the normalizer recognises sshd lines only, so `sudo`, cron, PAM and logind lines are ignored. It becomes a much stronger false-positive test when the sudo/useradd normalizer lands (next step).
+- Detection *delay* is a property of the running system (see the lab: 7.4 s with 473 ms of pipeline), not of these files.
+
+**Problems & lessons**
+- My first generator produced 897 lines instead of the ~2000 I claimed in its description; I tuned the session volume to 1994 rather than editing the claim.
+- The dataset tools folder was treated as a rule folder by discovery; folders without `.log` files are now skipped, while a misnamed rule folder that does contain logs is still an error (tested both ways).
+- One of my report tests expected `1/1` in the "benign clean" column, forgetting that I had defined it to include the shared scenarios (`2/2`): the test was wrong, not the report.
+- Everything passed at the first run of the new scenarios, which proves little by itself: hence the mutation checks above.
+
+**Next (M2)**: extend the Linux normalizer (`sudo`, `useradd`, `usermod`, `gpasswd`) so the normal day exercises real traffic, then the new rules (new account, added to the sudo group, root shell through sudo), the `distinct` aggregation and the `sequence` rule type, and a time-of-day condition.
+
+---
+
 ## 2026-09-25 — Lab guide, deployment scripts and the first real attack (PR #12)
 
 **What**

@@ -155,9 +155,12 @@ but read "Replaying old logs" in [`DETECTION.md`](DETECTION.md) first.
 ```bash
 cd backend
 uv run pytest tests/detection -q      # rule validation, engine, store contract, scenarios
+uv run sentinel bench                  # detection rate / false alerts of every scenario
+uv run sentinel bench --output ../docs/BENCHMARK.md   # regenerate the committed report
+uv run sentinel bench --throughput     # in-memory engine speed (not part of the report)
 ```
 
-Rules live in `rules/`, scenarios in `datasets/<rule-id>/{attack,benign}.log`. The Redis variant
+Rules live in `rules/`, scenarios in `datasets/<rule-id>/{attack,benign}*.log` (and `datasets/_shared/`). The Redis variant
 of the store contract tests runs when `SENTINEL_TEST_REDIS_URL` is set. See
 [`DETECTION.md`](DETECTION.md) for the rule format and how to add a rule.
 

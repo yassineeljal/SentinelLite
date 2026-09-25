@@ -1,4 +1,5 @@
 # expect: 0
+# description: Typos, sub-threshold probes, distributed noise, slow guessing and IPv6: no alert.
 # Legitimate typos, sub-threshold probes, distributed noise, slow guessing and IPv6: no alert.
 2026-09-24T15:00:00+00:00 ubuntu-01 sshd[821]: Failed password for alice from 10.0.0.5 port 41000 ssh2
 2026-09-24T15:00:05+00:00 ubuntu-01 sshd[822]: Failed password for alice from 10.0.0.5 port 41001 ssh2

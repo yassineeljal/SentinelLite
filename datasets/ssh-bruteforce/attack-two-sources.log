@@ -1,0 +1,12 @@
+# expect: 2
+# description: Two sources attack at the same time: each is counted on its own, two alerts.
+2026-09-24T15:00:00+00:00 prod-web-01 sshd[2018]: Failed password for root from 203.0.113.70 port 42017 ssh2
+2026-09-24T15:00:01+00:00 prod-web-01 sshd[2019]: Failed password for admin from 203.0.113.71 port 42018 ssh2
+2026-09-24T15:00:02+00:00 prod-web-01 sshd[2020]: Failed password for root from 203.0.113.70 port 42019 ssh2
+2026-09-24T15:00:03+00:00 prod-web-01 sshd[2021]: Failed password for admin from 203.0.113.71 port 42020 ssh2
+2026-09-24T15:00:04+00:00 prod-web-01 sshd[2022]: Failed password for root from 203.0.113.70 port 42021 ssh2
+2026-09-24T15:00:05+00:00 prod-web-01 sshd[2023]: Failed password for admin from 203.0.113.71 port 42022 ssh2
+2026-09-24T15:00:06+00:00 prod-web-01 sshd[2024]: Failed password for root from 203.0.113.70 port 42023 ssh2
+2026-09-24T15:00:07+00:00 prod-web-01 sshd[2025]: Failed password for admin from 203.0.113.71 port 42024 ssh2
+2026-09-24T15:00:08+00:00 prod-web-01 sshd[2026]: Failed password for root from 203.0.113.70 port 42025 ssh2
+2026-09-24T15:00:09+00:00 prod-web-01 sshd[2027]: Failed password for admin from 203.0.113.71 port 42026 ssh2

@@ -1,0 +1,3 @@
+# expect: 1
+# description: Root logs in with a public key (a stolen or planted key).
+2026-09-24T15:00:00+00:00 prod-web-01 sshd[2070]: Accepted publickey for root from 203.0.113.9 port 52069 ssh2: ED25519 SHA256:abc123

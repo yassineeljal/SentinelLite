@@ -1,87 +1,54 @@
-"""Scenario tests: every shipped rule must detect its attack and stay silent on benign traffic.
+"""Every shipped rule must detect its attacks and stay silent on benign traffic.
 
-Convention (enforced here): each rule `rules/<id>.yaml` has `datasets/<id>/attack.log` and
-`datasets/<id>/benign.log`: raw log lines with a `# expect: N` header giving the number of
-alerts the rule must raise on that file. New rules that skip this fail the build.
+The convention and the replay logic live in `sentinel_core.detection.scenarios` (also used by
+`sentinel bench`); see its docstring for the dataset format. A rule without at least one attack and
+one benign scenario, or a malformed dataset file, fails here.
 """
 
-import re
-from datetime import UTC, datetime
 from pathlib import Path
-from uuid import UUID
+from uuid import uuid4
 
 import pytest
+from redis.asyncio import Redis
 
-from sentinel_core.detection.engine import DetectionEngine
-from sentinel_core.detection.rules import Rule, load_rules
-from sentinel_core.detection.store import InMemoryWindowStore
-from sentinel_core.normalizers.base import RawLog
-from sentinel_core.normalizers.registry import NORMALIZERS
-from sentinel_core.schema.event import Source
+from sentinel_core.detection.rules import load_rules
+from sentinel_core.detection.scenarios import SHARED, Scenario, discover_scenarios, run_scenario
+from sentinel_core.detection.store import RedisWindowStore
+from tests.support import REDIS_URL
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RULES = load_rules(REPO_ROOT / "rules")
-AGENT = UUID("22222222-2222-2222-2222-222222222222")
-RECEIVED_AT = datetime(2026, 9, 25, tzinfo=UTC)  # after every timestamp in the datasets
-SCENARIOS = ["attack", "benign"]
+SCENARIOS = discover_scenarios(REPO_ROOT / "datasets", [rule.id for rule in RULES])
 
 
-def dataset(rule: Rule, scenario: str) -> Path:
-    return REPO_ROOT / "datasets" / rule.id / f"{scenario}.log"
+def test_every_rule_has_attack_and_benign_scenarios() -> None:
+    assert {s.rule_id for s in SCENARIOS} - {SHARED} == {rule.id for rule in RULES}
 
 
-def read_dataset(path: Path) -> tuple[int, list[str]]:
-    """(expected alert count from the `# expect: N` header, the raw log lines)."""
-    lines = path.read_text().splitlines()
-    header = next(
-        (re.fullmatch(r"# expect: (\d+)", x) for x in lines if x.startswith("# expect")), None
-    )
-    assert header is not None, f"{path} needs a '# expect: N' header"
-    return int(header[1]), [x for x in lines if x and not x.startswith("#")]
+@pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: f"{s.rule_id}/{s.name}")
+async def test_scenario_produces_exactly_the_expected_alerts(scenario: Scenario) -> None:
+    result = await run_scenario(scenario, RULES)
+
+    assert result.passed, "; ".join(result.problems)
 
 
-async def alerts_for(rule: Rule, path: Path) -> tuple[int, int]:
-    """Replay a dataset through the normalizer and the engine (all rules loaded, like in
-    production). Returns (expected alerts of `rule`, actual alerts of `rule`)."""
-    expected, lines = read_dataset(path)
-    normalizer = NORMALIZERS[Source.LINUX_AUTH]
-    engine = DetectionEngine(RULES, InMemoryWindowStore())
+@pytest.mark.integration
+@pytest.mark.skipif(REDIS_URL is None, reason="SENTINEL_TEST_REDIS_URL not set")
+@pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: f"{s.rule_id}/{s.name}")
+async def test_scenarios_give_the_same_result_on_the_redis_store_the_detector_uses(
+    scenario: Scenario,
+) -> None:
+    """Same alerts on the Redis store (Lua scripts) as on the in-memory reference, on every
+    scenario including the 2000-line normal day."""
+    assert REDIS_URL is not None
+    client = Redis.from_url(REDIS_URL, decode_responses=True)
+    try:
+        store = RedisWindowStore(client, key_prefix=f"test:{uuid4()}:")
 
-    raised = 0
-    for number, line in enumerate(lines):
-        raw = RawLog(
-            agent_id=AGENT,
-            source=Source.LINUX_AUTH,
-            origin=f"{path.name}:{number}",
-            line=line,
-            received_at=RECEIVED_AT,
-        )
-        event = normalizer.normalize(raw)
-        if event is None:
-            continue
-        raised += sum(a.rule_id == rule.id for a in await engine.evaluate(event))
-    return expected, raised
+        on_redis = await run_scenario(scenario, RULES, store=store)
+        on_memory = await run_scenario(scenario, RULES)
 
-
-@pytest.mark.parametrize("rule", RULES, ids=lambda r: r.id)
-def test_every_rule_ships_an_attack_and_a_benign_scenario(rule: Rule) -> None:
-    missing = [s for s in SCENARIOS if not dataset(rule, s).is_file()]
-
-    assert not missing, f"rule {rule.id!r} lacks datasets/{rule.id}/{{{','.join(missing)}}}.log"
-
-
-@pytest.mark.parametrize("scenario", SCENARIOS)
-@pytest.mark.parametrize("rule", RULES, ids=lambda r: r.id)
-async def test_rule_scenarios_produce_the_expected_alerts(rule: Rule, scenario: str) -> None:
-    expected, actual = await alerts_for(rule, dataset(rule, scenario))
-
-    assert actual == expected, f"{rule.id}/{scenario}: expected {expected} alert(s), got {actual}"
-
-
-def test_attack_scenarios_really_expect_alerts_and_benign_ones_none() -> None:
-    """Guards against a dataset whose header was edited to hide a broken rule."""
-    for rule in RULES:
-        attack = dataset(rule, "attack").read_text()
-        benign = dataset(rule, "benign").read_text()
-        assert not attack.startswith("# expect: 0"), f"{rule.id} attack expects nothing"
-        assert benign.startswith("# expect: 0"), f"{rule.id} benign must expect 0 alerts"
+        assert on_redis.alerts == on_memory.alerts
+        assert on_redis.passed, "; ".join(on_redis.problems)
+    finally:
+        await client.aclose()
