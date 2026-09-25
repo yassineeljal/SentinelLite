@@ -13,6 +13,41 @@ Entry template:
 
 ---
 
+## 2026-09-25 — Lab guide, deployment scripts and the first real attack (PR #12)
+
+**What**
+- `lab/README.md`: the lab (topology, two ways to build it, safety rules, troubleshooting, measured result).
+- `lab/scripts/`: `deploy-agent.sh` (from the platform host: builds the agent wheel, registers the agent, sends the key over SSH to a private file, installs and starts the service), `remote-install.sh` (runs on the monitored host, idempotent: packages, rsyslog, service user in `adm`, virtualenv, config, key, systemd unit), `attack-ssh-bruteforce.sh` (hydra; refuses any non-private target), `detection-delay.sh` (attack → alert timings from the database), `wordlists/small.txt`.
+- Docs updated: `AGENT.md` (unit now validated), ARCHITECTURE §3 note, M1 criterion result, ADR 24, `OPERATIONS.md`, `.env.example` (host address varies).
+
+**Why**
+The M1 criterion is "a real attack from Kali raises an alert in under 10 s", and the agent and its systemd unit had never run on a real Linux host. Waiting for UTM VMs (an interactive installer per VM) would have delayed that proof; OrbStack, already installed, creates real systemd Linux machines (including a Kali one) with one command.
+
+**Result — measured, real chain** (Ubuntu 24.04.5 arm64 target and Kali arm64 attacker as OrbStack machines, hydra 9.7 with 4 tasks and 20 passwords against `root`): hydra → sshd → rsyslog → `/var/log/auth.log` → `sentinel-agent` under systemd → API → Redis → normalizer → Postgres → detector → alert. First failed login logged at +3.8 s, threshold (5th failure) at +6.9 s, **alert stored at +7.4 s**; the pipeline itself (5th failure logged → alert stored) took 473 ms including the agent's polling interval, the rest is how fast the attacker fails five times. **The M1 criterion (< 10 s) is met.** One run: a demonstration, not a benchmark.
+Also validated on a real host: the systemd unit starts as designed (dedicated user, group `adm` for `auth.log`, `0700` state directory, unreadable key), `systemd-analyze security` exposure **4.2 (OK)**, and real rsyslog lines (ISO timestamps with microseconds) are parsed.
+
+**Design notes**
+- OrbStack machines reach the Mac through `host.orb.internal`, which lands on the Mac's `localhost`: the API stays bound to `127.0.0.1`. UTM VMs cannot, so `SENTINEL_BIND_ADDR` must be the Mac's address on the VM network, and that interface only exists while a VM runs (start VMs, then `docker compose up`).
+- The attack script only accepts RFC 1918 / loopback targets. The key never appears on a command line or in output: it is written to a `0600` temporary file, copied over SSH and installed `0600` owned by the service user.
+- UTM guidance is taken from UTM's and Kali's documentation and marked "not executed": Apple Virtualization offers only Shared and Bridged networking, Host Only requires the QEMU backend, and Kali's UTM guide currently needs a temporary serial device during install (a fallback — a second Ubuntu VM with `hydra` — is documented).
+
+**Problems & lessons**
+- **A wrong assumption caught early**: I had assumed the Mac is `192.168.64.1` on UTM's network. On this Mac the bridge is `192.168.139.x` with the host at `.3`. The guide now tells the reader to discover it, and says why.
+- The bridge address (`192.168.139.3:8000`) was refused from the OrbStack machine while `host.orb.internal:8000` answered: the first is bound-address dependent, the second is not.
+- OrbStack's Ubuntu image has no `openssh-server` (script `--with-sshd`) and Kali has no Python (the attack script's timestamps use GNU `date +%s%3N`, not Python).
+- My first `deploy-agent.sh` run failed because this branch had been created from `main`, which does not contain the agent yet (PR #11 is unmerged). The lab branch is therefore stacked on `feat/linux-agent`: **merge #11 first**, then this PR.
+- The user already has two UTM VMs ("Linux" x86_64, "Linux 2" aarch64); they were only inspected read-only and are not touched. New VMs get distinct names.
+- One documentation URL I guessed for UTM's network page returned 404; the facts were re-checked from pages that exist before writing them down.
+
+**Not done yet**
+- **Path B (UTM VMs) was not executed**: its steps follow the documentation and are labelled as such. The scripts it relies on are the ones validated in path A.
+- The OrbStack machines (`sl-target`, `sl-attacker`, agent `lab-target-1` registered on the platform) were kept but stopped; remove with `orb delete` and `sentinel agents revoke` when no longer wanted.
+- Windows target and Sysmon (M6), response/blocking (M5), detection-rate and false-positive measurements (M2).
+
+**Next**: M2 — more rules (new admin account, sudo, encoded PowerShell…), the `sequence`/`stateful` types, a bounded-time regex engine, and the benchmark that turns the scenarios into detection-rate / false-positive figures.
+
+---
+
 ## 2026-09-25 — Linux agent (PR #11)
 
 **Housekeeping first** — PRs #1–#10 (M0 and the whole M1 backend slice) were merged into `main` on 2026-09-25 with merge commits, in order, each retargeted to `main` beforehand; `main` is identical to the last stacked branch and its CI is green (246 tests). The merged branches were kept on GitHub. From now on each piece of work is a branch from `main` and a PR straight into `main`.

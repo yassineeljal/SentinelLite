@@ -72,6 +72,14 @@ The platform runs as a Docker Compose stack directly on the Mac (**OrbStack**). 
 
 Development, unit tests and integration runs all happen on the Mac. The API is published on `127.0.0.1` by default (`SENTINEL_BIND_ADDR`); once the lab exists it is bound to the host-only interface IP, **never** `0.0.0.0`. The same compose file can later be deployed in a dedicated `platform` VM for a more realistic demo. Only the `attacker` VM may generate attack traffic, and only towards the `target-*` VMs.
 
+> **Lab status.** The whole chain was validated with two **OrbStack Linux machines** (Ubuntu 24.04 target,
+> Kali attacker) before the UTM VMs exist: real `sshd`, `rsyslog`, `systemd`, `hydra`. OrbStack machines
+> reach the platform through `host.orb.internal`, which lands on the Mac's `localhost` (the API stays
+> bound to `127.0.0.1`); UTM VMs need `SENTINEL_BIND_ADDR` set to the Mac's address on the VM network,
+> which **varies** (`192.168.139.3` on the development Mac, not `192.168.64.1`) and must be discovered.
+> UTM stays the target for the isolated network (Host Only, QEMU backend) and for the Windows VM.
+> See [`lab/README.md`](../lab/README.md).
+
 ## 4. Components
 
 | Component | Role | Tech | Scalable? |
@@ -291,6 +299,7 @@ SentinelLite/
 | 21 | **Agents are semi-trusted: per-agent detection state by default (`scope: agent`), 5 s future-timestamp skew, sanitized terminal output** | Shared state across agents, 5-minute skew, raw printing of log fields | Found by the M1 security review and reproduced by a test: with shared state and a 5-minute skew, a compromised agent could push a window ahead and make real events of other agents 'too late', or frame an IP by adding fake failures. Per-agent state removes cross-agent influence by construction; the small skew protects the rules that opt into `scope: global`; escaping control characters protects the analyst's terminal from attacker-controlled log text (evidence rewriting, OSC 52 clipboard writes). |
 | 22 | **Robustness against poison data: neutralise unstorable text at the API, quarantine entries the database rejects, persist alerts per event, isolate failing rules, robust partition creation, content in the event id** | Rejecting whole batches on odd bytes, retrying failed batches forever, end-of-batch alert persistence, one exception aborting all rules | Found by the full M1 code review. Logs are attacker-controlled: a NUL byte failed the insert on every retry and blocked every agent behind it; end-of-batch persistence could lose an alert once later events advanced the windows; a future-dated event blocked partition creation; an inode reused after rotation collapsed different lines into one event. The fixes keep the at-least-once model and make every failure mode either transient (retried) or isolated (dead-lettered). |
 | 23 | **Linux agent: standard library only, position committed after the server's 202, rotation handled like `tail -F`, bisection of refused batches with a circuit breaker, exit on 401** | Fluent Bit, a dependency-rich agent (requests, watchdog), a disk queue, retrying refused lines forever | The agent is copied to lab VMs: nothing to install but Python. The log file itself is the durable buffer (offset + idempotent origin), so a separate disk queue would only add failure modes. A refused batch is split to isolate the one bad line (never stuck), and 10 refusals in a row stop it (never silently discards the log). A revoked key needs an operator, not a retry loop. Design and limits in AGENT.md. |
+| 24 | **Lab: validate on OrbStack Linux machines first; UTM VMs for isolation and Windows; deploy the agent with a script; discover the host address instead of assuming it** | Waiting for UTM VMs before testing on real Linux; hard-coding `192.168.64.1` | OrbStack machines are real systemd Linux (sshd, rsyslog, hydra) and take one command to create, so the agent, its unit and the full attack chain were validated without an installer. The Mac's address on UTM's network differs from the commonly quoted one, and its interface only exists while a VM runs, so the guide makes it discoverable. The scripts (`deploy-agent.sh`, `remote-install.sh`, the attack and measurement scripts) work for both. |
 
 ## 14. Roadmap (vertical slices)
 
@@ -299,7 +308,7 @@ Instead of "all collection, then all detection", we build a **minimal end-to-end
 | Milestone | Content | Success criterion |
 |---|---|---|
 | **M0 — Foundations** (wk 1–2) | Repo, backend skeleton, Docker Compose (Postgres + Redis + api), CI, minimal lab (`target-linux` + `attacker` VMs) | `docker compose up` OK on the Mac, CI green |
-| **M1 — Vertical slice** (wk 3–4) | Linux agent (`auth.log`) → ingestion → normalizer → Postgres → *SSH brute force* rule → alert via API | Hydra from Kali ⇒ alert in < 10 s |
+| **M1 — Vertical slice** (wk 3–4) | Linux agent (`auth.log`) → ingestion → normalizer → Postgres → *SSH brute force* rule → alert via API | Hydra from Kali ⇒ alert in < 10 s — **met on 2026-09-25: 7.4 s** (real hydra → sshd → agent → alert; pipeline 473 ms, see [`lab/README.md`](../lab/README.md)) |
 | **M2 — Detection** (wk 5–6) | `match`/`threshold`/`sequence` engine, 5 rules, benchmark + tests | 5 tested rules, detection/FP report |
 | **M3 — Enrichment** (wk 7) | GeoIP, AbuseIPDB (cache/quota), risk score | Enriched alerts |
 | **M4 — Dashboard** (wk 8–9) | Auth + RBAC + 2FA, alert list, map, incidents, MITRE chart | Full analyst workflow |
@@ -323,6 +332,6 @@ Instead of "all collection, then all detection", we build a **minimal end-to-end
 
 ## 16. Open questions
 
-1. Confirm at M0 that UTM networking gives the Mac (platform) ↔ targets connectivity we need (host-only + shared network for updates).
+1. UTM networking (Mac ↔ targets, Host Only isolation, whether two Host Only guests see each other) is still to be confirmed when the UTM VMs are built; the OrbStack lab already proved the rest of the chain.
 2. GeoLite2 requires a free MaxMind account/license key (needed at M3).
 3. AbuseIPDB free API key (needed at M3).
