@@ -1,0 +1,99 @@
+2026-09-25T14:51:39.044983-04:00 sl-target sudo: pam_unix(sudo:session): session closed for user root
+2026-09-25T14:51:39.050008-04:00 sl-target sudo:  alice : PWD=/home/alice/work ; USER=root ; COMMAND=/usr/bin/apt-get --version
+2026-09-25T14:51:39.051324-04:00 sl-target sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=501)
+2026-09-25T14:51:39.077437-04:00 sl-target sudo: pam_unix(sudo:session): session closed for user root
+2026-09-25T14:51:39.081035-04:00 sl-target sudo:  alice : PWD=/home/alice/work ; USER=root ; COMMAND=/usr/sbin/useradd -m -s /bin/bash evil
+2026-09-25T14:51:39.081995-04:00 sl-target sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=501)
+2026-09-25T14:51:39.104486-04:00 sl-target useradd[295]: new group: name=evil, GID=1000
+2026-09-25T14:51:39.104531-04:00 sl-target useradd[295]: new user: name=evil, UID=1000, GID=1000, home=/home/evil, shell=/bin/bash, from=none
+2026-09-25T14:51:39.122581-04:00 sl-target sudo: pam_unix(sudo:session): session closed for user root
+2026-09-25T14:51:39.125708-04:00 sl-target sudo:  alice : PWD=/home/alice/work ; USER=root ; COMMAND=/usr/sbin/useradd -m carol2
+2026-09-25T14:51:39.126629-04:00 sl-target sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=501)
+2026-09-25T14:51:39.135723-04:00 sl-target useradd[304]: new group: name=carol2, GID=1001
+2026-09-25T14:51:39.135765-04:00 sl-target useradd[304]: new user: name=carol2, UID=1001, GID=1001, home=/home/carol2, shell=/bin/sh, from=none
+2026-09-25T14:51:39.153827-04:00 sl-target sudo: pam_unix(sudo:session): session closed for user root
+2026-09-25T14:51:39.156895-04:00 sl-target sudo:  alice : PWD=/home/alice/work ; USER=root ; COMMAND=/usr/sbin/usermod -aG sudo evil
+2026-09-25T14:51:39.157720-04:00 sl-target sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=501)
+2026-09-25T14:51:39.164388-04:00 sl-target usermod[313]: add 'evil' to group 'sudo'
+2026-09-25T14:51:39.164422-04:00 sl-target usermod[313]: add 'evil' to shadow group 'sudo'
+2026-09-25T14:51:39.170354-04:00 sl-target sudo: pam_unix(sudo:session): session closed for user root
+2026-09-25T14:51:39.173338-04:00 sl-target sudo:  alice : PWD=/home/alice/work ; USER=root ; COMMAND=/usr/bin/gpasswd -a carol2 adm
+2026-09-25T14:51:39.174274-04:00 sl-target sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=501)
+2026-09-25T14:51:39.184740-04:00 sl-target gpasswd[321]: user carol2 added by root to group adm
+2026-09-25T14:51:39.185039-04:00 sl-target sudo: pam_unix(sudo:session): session closed for user root
+2026-09-25T14:51:39.188050-04:00 sl-target sudo:  alice : PWD=/home/alice/work ; USER=root ; COMMAND=/usr/sbin/adduser --quiet --disabled-password --gecos  dave
+2026-09-25T14:51:39.188895-04:00 sl-target sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=501)
+2026-09-25T14:51:39.222358-04:00 sl-target groupadd[332]: group added to /etc/group: name=dave, GID=1002
+2026-09-25T14:51:39.224542-04:00 sl-target groupadd[332]: group added to /etc/gshadow: name=dave
+2026-09-25T14:51:39.225008-04:00 sl-target groupadd[332]: new group: name=dave, GID=1002
+2026-09-25T14:51:39.237405-04:00 sl-target useradd[339]: new user: name=dave, UID=1002, GID=1002, home=/home/dave, shell=/bin/bash, from=none
+2026-09-25T14:51:39.261581-04:00 sl-target chfn[352]: changed user 'dave' information
+2026-09-25T14:51:39.273675-04:00 sl-target gpasswd[360]: members of group users set by root to dave
+2026-09-25T14:51:39.274376-04:00 sl-target sudo: pam_unix(sudo:session): session closed for user root
+2026-09-25T14:51:39.277384-04:00 sl-target sudo:  alice : PWD=/home/alice/work ; USER=root ; COMMAND=/usr/sbin/adduser --quiet dave sudo
+2026-09-25T14:51:39.278301-04:00 sl-target sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=501)
+2026-09-25T14:51:39.296819-04:00 sl-target usermod[369]: add 'dave' to group 'sudo'
+2026-09-25T14:51:39.296850-04:00 sl-target usermod[369]: add 'dave' to shadow group 'sudo'
+2026-09-25T14:51:39.306052-04:00 sl-target sudo: pam_unix(sudo:session): session closed for user root
+2026-09-25T14:51:39.309184-04:00 sl-target sudo:  alice : PWD=/root ; USER=root ; COMMAND=/bin/bash --login -c true
+2026-09-25T14:51:39.310195-04:00 sl-target sudo: pam_unix(sudo-i:session): session opened for user root(uid=0) by (uid=501)
+2026-09-25T14:51:39.319235-04:00 sl-target (systemd): pam_unix(systemd-user:session): session opened for user root(uid=0) by (uid=0)
+2026-09-25T14:51:39.346261-04:00 sl-target sudo: pam_unix(sudo-i:session): session closed for user root
+2026-09-25T14:51:39.349927-04:00 sl-target sudo:  alice : PWD=/home/alice/work ; USER=root ; COMMAND=/bin/bash -c true
+2026-09-25T14:51:39.350835-04:00 sl-target sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=501)
+2026-09-25T14:51:39.351615-04:00 sl-target sudo: pam_unix(sudo:session): session closed for user root
+2026-09-25T14:51:39.354697-04:00 sl-target sudo:  alice : PWD=/home/alice/work ; USER=root ; COMMAND=/usr/bin/bash -c 'id -u'
+2026-09-25T14:51:39.355577-04:00 sl-target sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=501)
+2026-09-25T14:51:39.356557-04:00 sl-target sudo: pam_unix(sudo:session): session closed for user root
+2026-09-25T14:51:39.359493-04:00 sl-target sudo:  alice : PWD=/home/alice/work ; USER=root ; COMMAND=/usr/bin/su -c true
+2026-09-25T14:51:39.360393-04:00 sl-target sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=501)
+2026-09-25T14:51:39.362999-04:00 sl-target su[395]: (to root) root on none
+2026-09-25T14:51:39.363530-04:00 sl-target su[395]: pam_unix(su:session): session opened for user root(uid=0) by (uid=0)
+2026-09-25T14:51:39.366500-04:00 sl-target su[395]: pam_unix(su:session): session closed for user root
+2026-09-25T14:51:39.367925-04:00 sl-target sudo: pam_unix(sudo:session): session closed for user root
+2026-09-25T14:51:39.370930-04:00 sl-target sudo:  alice : PWD=/home/alice/work ; USER=root ; COMMAND=/usr/bin/passwd -l evil
+2026-09-25T14:51:39.371787-04:00 sl-target sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=501)
+2026-09-25T14:51:39.379788-04:00 sl-target passwd[398]: password for 'evil' changed by 'root'
+2026-09-25T14:51:39.379857-04:00 sl-target sudo: pam_unix(sudo:session): session closed for user root
+2026-09-25T14:51:39.382686-04:00 sl-target sudo:  alice : PWD=/home/alice/work ; USER=root ; COMMAND=/usr/sbin/useradd -m nosudo1
+2026-09-25T14:51:39.383581-04:00 sl-target sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=501)
+2026-09-25T14:51:39.395242-04:00 sl-target useradd[406]: new group: name=nosudo1, GID=1003
+2026-09-25T14:51:39.395273-04:00 sl-target useradd[406]: new user: name=nosudo1, UID=1003, GID=1003, home=/home/nosudo1, shell=/bin/sh, from=none
+2026-09-25T14:51:39.412170-04:00 sl-target sudo: pam_unix(sudo:session): session closed for user root
+2026-09-25T14:51:39.415177-04:00 sl-target sudo:  alice : PWD=/home/alice/work ; USER=nosudo1 ; COMMAND=/usr/bin/sudo -n ls /
+2026-09-25T14:51:39.416219-04:00 sl-target sudo: pam_unix(sudo:session): session opened for user nosudo1(uid=1003) by (uid=501)
+2026-09-25T14:51:39.418727-04:00 sl-target sudo: pam_unix(sudo:session): session closed for user nosudo1
+2026-09-25T14:51:39.421774-04:00 sl-target sudo:  alice : PWD=/home/alice/work ; USER=carol2 ; COMMAND=/usr/bin/sudo -S -k ls /
+2026-09-25T14:51:39.422706-04:00 sl-target sudo: pam_unix(sudo:session): session opened for user carol2(uid=1001) by (uid=501)
+2026-09-25T14:51:39.424286-04:00 sl-target sudo: pam_unix(sudo:auth): authentication failure; logname= uid=1001 euid=0 tty= ruser=carol2 rhost=  user=carol2
+2026-09-25T14:51:41.596618-04:00 sl-target sudo: pam_unix(sudo:auth): conversation failed
+2026-09-25T14:51:41.596783-04:00 sl-target sudo: pam_unix(sudo:auth): auth could not identify password for [carol2]
+2026-09-25T14:51:41.601923-04:00 sl-target sudo:   carol2 : user NOT in sudoers ; PWD=/home/alice/work ; USER=root ; COMMAND=/usr/bin/ls /
+2026-09-25T14:51:41.602510-04:00 sl-target sudo: pam_unix(sudo:session): session closed for user carol2
+2026-09-25T14:51:41.613564-04:00 sl-target sudo:  alice : PWD=/home/alice/work ; USER=evil ; COMMAND=/usr/bin/sudo -S -k ls /
+2026-09-25T14:51:41.615792-04:00 sl-target sudo: pam_unix(sudo:session): session opened for user evil(uid=1000) by (uid=501)
+2026-09-25T14:51:41.619767-04:00 sl-target sudo: pam_unix(sudo:auth): authentication failure; logname= uid=1000 euid=0 tty= ruser=evil rhost=  user=evil
+2026-09-25T14:51:43.732774-04:00 sl-target sudo: pam_unix(sudo:auth): conversation failed
+2026-09-25T14:51:43.732964-04:00 sl-target sudo: pam_unix(sudo:auth): auth could not identify password for [evil]
+2026-09-25T14:51:43.737296-04:00 sl-target sudo:     evil : 1 incorrect password attempt ; PWD=/home/alice/work ; USER=root ; COMMAND=/usr/bin/ls /
+2026-09-25T14:51:43.740134-04:00 sl-target sudo: pam_unix(sudo:session): session closed for user evil
+2026-09-25T14:51:43.750380-04:00 sl-target sudo:  alice : PWD=/home/alice/work ; USER=root ; COMMAND=/usr/bin/su - evil -c 'echo hi'
+2026-09-25T14:51:43.752531-04:00 sl-target sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=501)
+2026-09-25T14:51:43.757323-04:00 sl-target su[423]: (to evil) root on none
+2026-09-25T14:51:43.758604-04:00 sl-target su[423]: pam_unix(su-l:session): session opened for user evil(uid=1000) by (uid=0)
+2026-09-25T14:51:43.781757-04:00 sl-target (systemd): pam_unix(systemd-user:session): session opened for user evil(uid=1000) by (uid=0)
+2026-09-25T14:51:43.821590-04:00 sl-target su[423]: pam_unix(su-l:session): session closed for user evil
+2026-09-25T14:51:43.823361-04:00 sl-target sudo: pam_unix(sudo:session): session closed for user root
+2026-09-25T14:51:43.826563-04:00 sl-target sudo:  alice : PWD=/home/alice/work ; USER=root ; COMMAND=/usr/bin/su nosudo1 -c 'su carol2 -c true'
+2026-09-25T14:51:43.827534-04:00 sl-target sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=501)
+2026-09-25T14:51:43.829485-04:00 sl-target su[437]: (to nosudo1) root on none
+2026-09-25T14:51:43.830027-04:00 sl-target su[437]: pam_unix(su:session): session opened for user nosudo1(uid=1003) by (uid=0)
+2026-09-25T14:51:43.839370-04:00 sl-target (systemd): pam_unix(systemd-user:session): session opened for user nosudo1(uid=1003) by (uid=0)
+2026-09-25T14:51:43.869386-04:00 sl-target su: pam_unix(su:auth): auth could not identify password for [carol2]
+2026-09-25T14:51:43.869818-04:00 sl-target su[449]: FAILED SU (to carol2) nosudo1 on none
+2026-09-25T14:51:44.877010-04:00 sl-target su[437]: pam_unix(su:session): session closed for user nosudo1
+2026-09-25T14:51:44.886329-04:00 sl-target sudo: pam_unix(sudo:session): session closed for user root
+2026-09-25T14:51:44.974127-04:00 sl-target sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=501)
+2026-09-25T14:51:44.975716-04:00 sl-target sudo: pam_unix(sudo:session): session closed for user root
+2026-09-25T14:51:49.413579-04:00 sl-target (sd-pam): pam_unix(systemd-user:session): session closed for user root
+2026-09-25T14:51:49.861248-04:00 sl-target sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=501)

@@ -13,6 +13,37 @@ Entry template:
 
 ---
 
+## 2026-09-25 — M2 (step 2) — Linux administrative events: sudo, useradd, usermod, gpasswd (PR #14)
+
+**What**
+- The `linux.auth` normalizer now produces `sudo_command`, `sudo_failed`, `account_created` and `group_member_added` events (in addition to the sshd ones), through per-process parsers (`normalizers/linux_admin.py`, `parsed.py`); new actions in the event schema.
+- The formats were **captured from a real Ubuntu 24.04** (real `sudo`, `useradd`, `usermod`, `gpasswd`, `adduser`, `su`, `passwd` run on the OrbStack machine) and the parsers and tests use those real lines (`tests/normalizers/data/ubuntu-24.04-admin.log`, 99 lines, user and path anonymised).
+- New [`EVENTS.md`](EVENTS.md): the event catalogue (message → action → fields) for rule authors; ADR 26.
+- The generated "normal day" now uses the real sudo format; `BENCHMARK.md` regenerated (647 benign events replayed, up from 358, still 0 false alerts).
+
+**Why**
+The next rules (new account, added to the sudo group, root shell through sudo) need these events, and the benign-day false-positive test only becomes meaningful once ordinary `sudo` traffic is parsed.
+
+**What the real capture taught (and would have been wrong from memory)**
+- sudo prints **no `TTY=`** outside a terminal, pads the user name with a variable number of spaces, and a failure writes **three PAM lines plus a summary line**: only the summary is an event, otherwise every failure would count four times. `usermod` writes each group change **twice** (`group` and `shadow group`): only the first is an event. `useradd` also writes `new group`.
+- **Bug found by the capture**: systemd user-manager lines use a **parenthesised process name** (`(systemd):`, `(sd-pam):`). The syslog framing rejected them as malformed, so on a real host they would have been **dead-lettered as ordinary traffic** (my earlier lab test never looked). They are now well-formed noise.
+
+**Security design — the sudo line is ambiguous by construction.** `PWD=` and `COMMAND=` are user-controlled, so a user can run from a directory named `/tmp/x ; USER=nobody ; COMMAND=/bin/ls` (a fake segment before the real one) or append one after it. A naive left-anchored parse would let a crafted directory name make a **root shell** look like `ls` as `nobody`. The parser collects every `USER=… ; COMMAND=…` segment and chooses conservatively: a root segment wins, and among root segments one running a shell wins; the event carries `ambiguous: true`. A decoy can only make an event look *more* sensitive, never hide a root shell. Tested in both directions (decoy before and after) and with a harmless root decoy. The actor is always the first token, so the command cannot forge it.
+
+**How verified**
+- 343 tests with real Redis and Postgres (261 pass, 82 skipped without them); ruff and mypy strict clean. The real capture yields **exactly** 18 sudo commands, 2 sudo failures, 4 new accounts and 3 group additions (and every event id is distinct); each format has its own test, plus the ignored lines that would double-count.
+- **Real stack**: after rebuilding the stack, the agent on the Ubuntu machine re-shipped the captured session and the platform stored `sudo_command` 21, `sudo_failed` 2 (`carol2` user_not_in_sudoers, `evil` incorrect_password, both with target and command), `account_created` 4 (`evil`, `carol2`, `dave`, `nosudo1`, with uid and shell), `group_member_added` 3 (`evil`→sudo and `dave`→sudo by usermod, `carol2`→adm by gpasswd), and **0 dead letters** (no systemd lines).
+- The committed benchmark went stale when the normalizer changed and the drift test failed, exactly as designed; the report was regenerated.
+
+**Problems & lessons**
+- My first version of the last test contained a meaningless assertion (`… or True`); removed and replaced by two precise tests.
+- The agent had noticed that the target's `auth.log` had been rewritten (head fingerprint changed under the same inode) and restarted from the top by itself — the fingerprint logic from the agent PR working on a real case.
+- `su`, `passwd` and PAM failures outside sudo appear in the capture but are deliberately not modelled yet (listed in `EVENTS.md`).
+
+**Next (M2)**: the rules that use these events — a new account, a member added to a privileged group, a root shell through sudo — each with attack and benign scenarios in the benchmark, then the `distinct` aggregation and the `sequence` rule type.
+
+---
+
 ## 2026-09-25 — M2 (step 1) — Detection benchmark and richer scenarios (PR #13)
 
 **Housekeeping** — PRs #11 (agent) and #12 (lab) were merged into `main` on request, in order, each retargeted to `main` first; `main` equals the last branch and its CI is green.
