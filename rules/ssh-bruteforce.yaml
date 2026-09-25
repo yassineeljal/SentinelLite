@@ -1,0 +1,16 @@
+id: ssh-bruteforce
+title: SSH brute force
+description: >
+  Five or more failed SSH logins from the same source IP within 60 seconds. Repeats from
+  the same source are suppressed for 5 minutes so one attack raises one alert.
+mitre: [T1110]
+severity: 60
+type: threshold
+match:
+  source: linux.auth
+  action: login_failed
+group_by: [src_ip]
+threshold:
+  count: 5
+  window: 60s
+cooldown: 300s

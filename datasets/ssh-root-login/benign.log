@@ -1,0 +1,9 @@
+# expect: 0
+# Other users, failed root attempts and look-alike names are not a root login.
+2026-09-24T15:00:00+00:00 ubuntu-01 sshd[856]: Accepted password for alice from 10.0.0.5 port 4422 ssh2
+2026-09-24T15:01:00+00:00 ubuntu-01 sshd[857]: Failed password for root from 203.0.113.7 port 47000 ssh2
+2026-09-24T15:01:01+00:00 ubuntu-01 sshd[858]: Failed password for root from 203.0.113.7 port 47001 ssh2
+2026-09-24T15:01:02+00:00 ubuntu-01 sshd[859]: Failed password for root from 203.0.113.7 port 47002 ssh2
+2026-09-24T15:02:00+00:00 ubuntu-01 sshd[860]: Accepted publickey for bob from 10.0.0.6 port 4422 ssh2: RSA SHA256:abc123
+2026-09-24T15:03:00+00:00 ubuntu-01 sshd[861]: Accepted password for root2 from 10.0.0.7 port 4422 ssh2
+2026-09-24T15:04:00+00:00 ubuntu-01 sshd[862]: Accepted password for administrator from 10.0.0.8 port 4422 ssh2

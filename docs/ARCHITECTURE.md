@@ -136,6 +136,8 @@ Frequently filtered fields (`ts`, `src_ip`, `action`, `host`, `user_name`) are r
 
 ### Rule types
 
+Implemented: `match` and `threshold` (see [`DETECTION.md`](DETECTION.md) for the reference, the evaluation semantics and how to add a rule). `sequence` and `stateful` are planned.
+
 | Type | Example | Mechanism |
 |---|---|---|
 | `match` | Encoded PowerShell, SQLi in `http.path`, event log cleared | A single event is enough (conditions on fields) |
@@ -283,6 +285,7 @@ SentinelLite/
 | 16 | **Fail closed** when no agent registry is configured; app built by a factory (`create_app`) with injectable dependencies | Module-level app singleton, permissive default | Safe default for a security product; no side effects at import time; tests inject fakes, integration tests use real Redis. |
 | 17 | **Alembic migrations run by a one-shot `migrate` compose service**; SQLAlchemy 2 async + asyncpg; named constraints | Auto-create tables at API startup, migrations inside the API entrypoint | The API never needs schema-changing rights at runtime, migrations are explicit and reversible (upgrade/downgrade/upgrade is tested), `alembic check` catches model/migration drift, and several API replicas cannot race to migrate. |
 | 18 | **Normalizer worker: persist first, then ack + delete; idempotent inserts; stale-entry takeover; `events` partitioned by day with a default partition; dead letters keyed by line identity** | Ack before writing, offsets in a separate store, monthly partitions, hashing the whole payload for dedup | Ack-after-persist means a crash redelivers instead of losing events, and `ON CONFLICT DO NOTHING` absorbs the repeat. `XAUTOCLAIM` recovers entries of crashed consumers. Agents control the timestamps in their lines, so a default partition guarantees an odd date never fails an insert; daily partitions are created ahead by the worker (advisory lock: safe with several workers). `ts` is part of the primary key because PostgreSQL requires the partition key in unique constraints. Dead-letter dedup uses the same identity as `event_id` (agent, source, origin), not the payload, because a retried batch gets a new `received_at`. |
+| 19 | **Detection: strict YAML rules validated at load time, event-time windows in Redis evaluated by an atomic Lua script, deterministic alert ids, clamped agent timestamps, mandatory attack + benign scenario per rule** | Free-form rules checked at runtime, wall-clock windows, evaluation in Python with several round trips, trusting event timestamps | A rule typo must not become a silent blind spot; event time makes replays and catch-up behave like live traffic; one Lua call per event is atomic (safe with several detectors) and cheap; deterministic ids make alert persistence idempotent; agents control the timestamps in their lines, so far-future dates are clamped to the receipt time; the scenario convention makes detection and false-positive rates measurable from the start. |
 
 ## 14. Roadmap (vertical slices)
 

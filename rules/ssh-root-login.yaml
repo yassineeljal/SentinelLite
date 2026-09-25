@@ -1,0 +1,15 @@
+id: ssh-root-login
+title: Successful SSH login as root
+description: >
+  Root logged in over SSH. Direct root login should be disabled (PermitRootLogin no); a
+  success is either a policy violation or a compromised credential. One alert per source IP
+  per minute.
+mitre: [T1078]
+severity: 70
+type: match
+match:
+  source: linux.auth
+  action: login_success
+  user_name: root
+group_by: [src_ip]
+cooldown: 60s

@@ -97,6 +97,17 @@ The Postgres tests truncate `agents`, `events` and `events_dead_letter` in the t
 `SENTINEL_TEST_DATABASE_URL` at a database that holds real data. CI runs the same tests with
 service containers.
 
+## Detection rules and scenarios
+
+```bash
+cd backend
+uv run pytest tests/detection -q      # rule validation, engine, store contract, scenarios
+```
+
+Rules live in `rules/`, scenarios in `datasets/<rule-id>/{attack,benign}.log`. The Redis variant
+of the store contract tests runs when `SENTINEL_TEST_REDIS_URL` is set. See
+[`DETECTION.md`](DETECTION.md) for the rule format and how to add a rule.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

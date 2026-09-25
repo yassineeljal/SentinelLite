@@ -13,6 +13,47 @@ Entry template:
 
 ---
 
+## 2026-09-25 — M1 (step 5) — Detection engine core and first two rules (PR #6)
+
+**What**
+- `detection/rules.py`: strict YAML rule format (`match` and `threshold`), durations, field/enum validation, `load_rules()` that reports every faulty file and duplicate id.
+- `detection/store.py`: sliding-window state with two implementations of one contract — `InMemoryWindowStore` (reference) and `RedisWindowStore` (sorted sets + atomic Lua scripts).
+- `detection/engine.py`: `DetectionEngine.evaluate(event) -> list[Alert]`; `detection/alerts.py`: `Alert` with deterministic ids.
+- Rules `rules/ssh-bruteforce.yaml` (T1110) and `rules/ssh-root-login.yaml` (T1078), each with `datasets/<id>/attack.log` and `benign.log`.
+- Docs: new [`DETECTION.md`](DETECTION.md) (format, semantics, how to add a rule), ADR 19, `OPERATIONS.md` section.
+
+**Why**
+Detection is the product. Building it as a pure library first — no queue, no database — makes the semantics (time, windows, cooldown, hostile input) testable in isolation before the worker wires it to the stream.
+
+**Design notes**
+- **Fail loudly at load time.** A misspelled field would mean an attack that is silently never detected, so unknown fields, unknown enum values (`login_failedd`), bad durations, unknown keys and inconsistent rule types all refuse to load, naming the file. Files are read with `yaml.safe_load`.
+- **Event time, not wall clock**, with a 30 s out-of-order tolerance and inclusive window bounds; cooldown is in event time too. Full semantics in `DETECTION.md`.
+- **Atomicity**: one Lua call per event (add, evict, count, cooldown check), so several detector workers can share a window without races. TTLs are wall-clock but only free memory.
+- **Hostile input**: group values (user names, IPs) are attacker-controlled → hashed for Redis keys, truncated in alerts; events lacking a group field are skipped rather than mis-grouped; a far-future timestamp forged by an agent is clamped to the server receipt time (otherwise one crafted line could push the window away from real events and hide an attack).
+- **Deterministic alert ids** so that replaying events cannot duplicate alerts once they are persisted.
+- **Scenario convention enforced by a test**: every rule must ship an attack and a benign scenario with a `# expect: N` header; a rule without them fails the build. This is also the seed of the detection-rate / false-positive measurements.
+
+**How verified**
+- 178 tests with real Redis and Postgres (141 pass and 37 Redis/Postgres tests are skipped without the services). New: 41 rule-validation cases; 13 store contract tests run against **both** stores, i.e. 26 cases (the Lua script behaves exactly like the in-memory reference); 14 engine tests (match, any-of, `extra.*`, per-group cooldown, groups independent, slow failures, missing group field, hostile group value, deterministic ids, disabled rules, several rules on one event, forged future timestamp); 7 scenario tests (2 rules × attack/benign, plus the presence and header conventions).
+- **The scenario harness has teeth**: temporarily weakening `ssh-bruteforce` from 5 to 3 attempts made the *benign* scenario fail (three typos by a legitimate user), and restoring it made everything pass again.
+- `ruff`, `mypy --strict` clean.
+
+**Problems & lessons**
+- Re-reading my own store tests before implementing showed two wrong expectations (an eviction case that contradicted the semantics I wanted, and a confusing comment). Fixing the tests first kept the implementation from bending to bad tests; the implementation then passed all of them on the first run.
+- `Event.user_name` is already capped at 256 characters, so my "hostile" test string had to respect that limit; the truncation itself lives in the normalizer.
+- Pydantic wraps validator errors in `ValidationError`, so `Rule.model_validate` is overridden to raise `RuleLoadError` with a readable message.
+- A `cooldown` of `0s` must stay valid (it is the way to disable the anti-repeat), unlike a `window` of `0s`.
+
+**Not done yet / limits**
+- **Not connected to anything**: no detector worker, no `alerts` table, `events.normalized` is still not published, and nothing of this step runs in the compose stack yet (verified with tests and real Redis only).
+- Only `match` and `threshold`; no regular expressions or substring conditions (they need a bounded-time engine because they run on attacker-controlled text).
+- Logs replayed more than 30 s out of order across a window boundary can be missed (documented).
+- Two rules on one source. The M1 security/code review is planned once the slice is complete (detector worker + alerts API).
+
+**Next**: the detector worker — normalizer publishes `events.normalized`, the detector consumes it (consumer group, ack after persisting), evaluates the engine with `RedisWindowStore`, persists alerts (`alerts` table, idempotent on `alert_id`), and an alerts endpoint. That completes the M1 vertical slice.
+
+---
+
 ## 2026-09-25 — M1 (step 4) — Normalizer worker, events and dead letters (PR #5)
 
 **What**
