@@ -1,0 +1,4 @@
+# expect: 1
+# description: A UID 0 account with a nologin shell is still a root account: only the UID 0 rule fires (the new-account rule excludes nologin shells).
+2026-09-24T10:00:00+00:00 prod-web-01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/sbin/useradd -o -u 0 -g 0 -M -s /usr/sbin/nologin sysadm
+2026-09-24T10:00:00+00:00 prod-web-01 useradd[3099]: new user: name=sysadm, UID=0, GID=0, home=/home/sysadm, shell=/usr/sbin/nologin, from=none

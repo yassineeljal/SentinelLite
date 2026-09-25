@@ -55,6 +55,13 @@ class Scenario:
     description: str = ""
     source: str = "linux.auth"
 
+    @property
+    def expected_alerts(self) -> dict[str, int]:
+        """Alerts per rule this scenario must produce, everything else being silent."""
+        if self.kind == "benign":
+            return {}
+        return {self.rule_id: self.expect} | {k: v for k, v in self.also.items() if v}
+
 
 @dataclass(frozen=True)
 class ScenarioResult:

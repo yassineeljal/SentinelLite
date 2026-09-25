@@ -1,0 +1,4 @@
+# expect: 2
+# description: The admin and wheel groups grant sudo rights on some systems.
+2026-09-24T10:00:00+00:00 prod-web-01 gpasswd[3147]: user evil added by root to group admin
+2026-09-24T10:00:05+00:00 prod-web-01 gpasswd[3150]: user evil2 added by root to group wheel

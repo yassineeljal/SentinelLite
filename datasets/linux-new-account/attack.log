@@ -1,0 +1,5 @@
+# expect: 1
+# description: An administrator session creates a login account: it is reported for review.
+2026-09-24T10:00:00+00:00 prod-web-01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/sbin/useradd -m evil
+2026-09-24T10:00:00+00:00 prod-web-01 useradd[3006]: new group: name=evil, GID=1000
+2026-09-24T10:00:00+00:00 prod-web-01 useradd[3009]: new user: name=evil, UID=1000, GID=1000, home=/home/evil, shell=/bin/bash, from=none

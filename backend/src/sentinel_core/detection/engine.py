@@ -53,13 +53,25 @@ def field_value(event: Event, name: str) -> str | None:
 class _CompiledRule:
     def __init__(self, rule: Rule) -> None:
         self.rule = rule
-        self.conditions: list[tuple[str, frozenset[str]]] = []
-        for name, condition in rule.match.items():
+        self.conditions = self._compile(rule.match)
+        self.exclusions = self._compile(rule.exclude)
+
+    @staticmethod
+    def _compile(mapping: dict[str, Any]) -> list[tuple[str, frozenset[str]]]:
+        compiled: list[tuple[str, frozenset[str]]] = []
+        for name, condition in mapping.items():
             values = condition if isinstance(condition, list) else [condition]
-            self.conditions.append((name, frozenset(str(_normalize(v)) for v in values)))
+            compiled.append((name, frozenset(str(_normalize(v)) for v in values)))
+        return compiled
+
+    @staticmethod
+    def _holds(event: Event, conditions: list[tuple[str, frozenset[str]]]) -> bool:
+        return all(field_value(event, name) in allowed for name, allowed in conditions)
 
     def matches(self, event: Event) -> bool:
-        return all(field_value(event, name) in allowed for name, allowed in self.conditions)
+        if not self._holds(event, self.conditions):
+            return False
+        return not (self.exclusions and self._holds(event, self.exclusions))
 
     def group_values(self, event: Event) -> list[str] | None:
         """Values of the group_by fields, or None if the event lacks one (cannot be attributed)."""

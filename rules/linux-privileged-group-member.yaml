@@ -1,0 +1,13 @@
+id: linux-privileged-group-member
+title: Member added to a privileged group
+description: >
+  An account was added to a group that gives administrative or root-equivalent rights: sudo, admin
+  and wheel (sudo rights), root, shadow and disk (direct access to sensitive files), docker and lxd
+  (container escape to root). usermod and gpasswd both count once.
+mitre: [T1098.007]
+severity: 70
+type: match
+match:
+  source: linux.auth
+  action: group_member_added
+  extra.group: [sudo, admin, wheel, root, shadow, disk, docker, lxd]

@@ -224,3 +224,23 @@ def test_internal_field_names_are_not_accepted_as_keys(text: str) -> None:
     cooldown and raise one alert per extra event."""
     with pytest.raises(RuleLoadError):
         parse_rule_yaml(text)
+
+
+def test_exclude_uses_the_same_fields_and_is_optional() -> None:
+    rule = Rule.model_validate(
+        rule_dict(
+            exclude={"extra.shell": ["/usr/sbin/nologin", "/bin/false"], "outcome": "success"}
+        )
+    )
+
+    assert rule.exclude["extra.shell"] == ["/usr/sbin/nologin", "/bin/false"]
+    assert Rule.model_validate(rule_dict()).exclude == {}
+
+
+@pytest.mark.parametrize(
+    "exclude",
+    [{"src_ipp": "1.2.3.4"}, {"action": "nope"}, {"extra.": "x"}, {"action": []}],
+)
+def test_exclude_is_validated_like_match(exclude: dict[str, Any]) -> None:
+    with pytest.raises(RuleLoadError):
+        Rule.model_validate(rule_dict(exclude=exclude))

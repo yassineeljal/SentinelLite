@@ -25,7 +25,11 @@ scope: agent                  # optional. agent (default): state per agent | glo
 enabled: true                 # optional
 ```
 
-- **Fields** usable in `match` and `group_by`: `source`, `category`, `action`, `outcome`, `severity`,
+- **`exclude`** (optional, same syntax as `match`): an event that satisfies **all** the exclusion's
+  conditions is left out even if `match` holds, e.g. `exclude: {extra.shell: [/usr/sbin/nologin]}`.
+  Use it to remove a known-benign shape, and write the blind spot it creates in the rule's
+  description (an exclusion is also what an attacker can hide behind).
+- **Fields** usable in `match`, `exclude` and `group_by`: `source`, `category`, `action`, `outcome`, `severity`,
   `src_ip`, `dst_ip`, `dst_port`, `user_name`, `host`, `agent_id`, and `extra.<path>` for
   source-specific data (e.g. `extra.method`). `raw` is deliberately not matchable.
 - **Durations**: `45s`, `5m`, `2h`, `1d` (integers only). A window must be > 0; a cooldown may be `0s`.
@@ -104,6 +108,11 @@ engine rather than plain `re`.
 |---|---|---|---|
 | `ssh-bruteforce` | T1110 | threshold | ≥ 5 failed logins per source IP **as seen by one agent** in 60 s, one alert per 5 min |
 | `ssh-root-login` | T1078 | match | successful login as `root`, one alert per source IP per minute |
+| `linux-new-account` | T1136.001 | match | a local account **with a login shell** was created (`useradd`/`adduser`). Excludes nologin/false shells (package service accounts): **blind spot**, a backdoor account with a nologin shell is not reported by this rule |
+| `linux-uid-zero-account` | T1136.001 | match | an account created with UID 0 (a second root), whatever its shell: covers the nologin blind spot above |
+| `linux-privileged-group-member` | T1098.007 | match | a member added to `sudo`, `admin`, `wheel`, `root`, `shadow`, `disk`, `docker` or `lxd` (usermod and gpasswd count once) |
+| `sudo-root-shell` | T1548.003 | match | an interactive root shell through sudo (`sudo -i`, `-s`, `su`, `su -`, `bash`…): the logged command is exactly a shell with no arguments. One alert per user and host per minute. Administrators do this routinely: moderate severity, the value is the trail |
+| `sudo-auth-failures` | T1110.001, T1548.003 | threshold | ≥ 3 failed sudo **invocations** (wrong password or not in sudoers) per user and host in 10 min. Counts invocations, not guesses: sudo asks up to three times per invocation and logs one summary line |
 
 ## Adding a rule
 

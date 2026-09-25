@@ -1,0 +1,18 @@
+id: sudo-auth-failures
+title: Repeated sudo failures
+description: >
+  Three or more failed sudo invocations by the same user on the same host within 10 minutes (wrong
+  password, or a user who is not in sudoers): password guessing against sudo, or a non-administrator
+  probing for privilege. Counts failed invocations, not individual guesses: sudo asks up to three
+  times per invocation and logs one summary line.
+mitre: [T1110.001, T1548.003]
+severity: 55
+type: threshold
+match:
+  source: linux.auth
+  action: sudo_failed
+group_by: [user_name, host]
+threshold:
+  count: 3
+  window: 10m
+cooldown: 20m

@@ -1,0 +1,3 @@
+# expect: 1
+# description: The user runs from a directory named like a fake sudo segment (USER=nobody ; COMMAND=/bin/ls) to make the root shell look harmless: the parser still reports it.
+2026-09-24T10:00:00+00:00 prod-web-01 sudo:    alice : TTY=pts/0 ; PWD=/tmp/x ; USER=nobody ; COMMAND=/bin/ls ; USER=root ; COMMAND=/bin/bash

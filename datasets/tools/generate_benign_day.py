@@ -67,6 +67,9 @@ def generate() -> str:
             end = start + timedelta(seconds=rng.randint(60, 2400))
             for command in rng.sample(COMMANDS, rng.randint(0, 3)):
                 when = start + (end - start) * rng.random()
+                if rng.random() < 0.12:  # a mistyped sudo password, then the right one
+                    emit(when - timedelta(seconds=6), "sudo", f"pam_unix(sudo:auth): authentication failure; logname={user} uid=1001 euid=0 tty=/dev/pts/0 ruser={user} rhost=  user={user}", with_pid=False)
+                    emit(when - timedelta(seconds=6), "sudo", f"{user:>8} : 1 incorrect password attempt ; TTY=pts/0 ; PWD=/home/{user} ; USER=root ; COMMAND={command}", with_pid=False)
                 # Real sudo format: the user name is right-aligned in a field of 8, TTY from a terminal.
                 emit(when, "sudo", f"{user:>8} : TTY=pts/0 ; PWD=/home/{user} ; USER=root ; COMMAND={command}", with_pid=False)
                 emit(when, "sudo", f"pam_unix(sudo:session): session opened for user root(uid=0) by {user}(uid=1001)", with_pid=False)

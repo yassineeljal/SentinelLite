@@ -17,6 +17,7 @@ from pydantic import (
     ConfigDict,
     Field,
     ValidationError,
+    ValidationInfo,
     field_validator,
     model_validator,
 )
@@ -96,6 +97,9 @@ class Rule(BaseModel):
     severity: int = Field(ge=0, le=100)
     type: Literal["match", "threshold"]
     match: dict[str, Condition]
+    # Events that satisfy ALL these conditions are left out even if `match` holds (e.g. accounts
+    # whose shell is nologin). Same syntax as `match`.
+    exclude: dict[str, Condition] = Field(default_factory=dict)
     group_by: list[str] = Field(default_factory=list)
     threshold: ThresholdSpec | None = None
     cooldown_seconds: Duration = Field(default=0, alias="cooldown", ge=0)
@@ -125,12 +129,14 @@ class Rule(BaseModel):
                     return {**data, "cooldown": threshold["window"]}
         return data
 
-    @field_validator("match")
+    @field_validator("match", "exclude")
     @classmethod
-    def _check_match(cls, match: dict[str, Condition]) -> dict[str, Condition]:
-        if not match:
+    def _check_conditions(
+        cls, conditions: dict[str, Condition], info: ValidationInfo
+    ) -> dict[str, Condition]:
+        if info.field_name == "match" and not conditions:
             raise ValueError("match must contain at least one condition")
-        for name, condition in match.items():
+        for name, condition in conditions.items():
             _check_field(name)
             values = condition if isinstance(condition, list) else [condition]
             if not values:
@@ -144,7 +150,7 @@ class Rule(BaseModel):
                             f"unknown value {value!r} for field {name!r} "
                             f"(known: {', '.join(sorted(allowed))})"
                         )
-        return match
+        return conditions
 
     @field_validator("group_by")
     @classmethod

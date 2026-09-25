@@ -1,0 +1,3 @@
+# expect: 1
+# description: sudo su -: the logged command is su with a single dash.
+2026-09-24T10:00:00+00:00 prod-web-01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/su -

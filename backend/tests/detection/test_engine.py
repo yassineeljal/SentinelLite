@@ -417,3 +417,44 @@ async def test_infrastructure_errors_are_never_swallowed_by_the_error_handler() 
     with pytest.raises(RedisError):
         await eng.evaluate(make_event(1, action=Action.LOGIN_SUCCESS))
     assert seen == []
+
+
+# --- exclude ---------------------------------------------------------------------------------
+
+
+def account_event(n: int, *, login_shell: str, uid: int = 1001) -> Event:
+    return make_event(n, action=Action.ACCOUNT_CREATED, src_ip=None, user=f"acct{n}").model_copy(
+        update={"extra": {"shell": login_shell, "uid": uid}, "category": Category.IAM}
+    )
+
+
+def new_account_rule(**changes: Any) -> Rule:
+    data: dict[str, Any] = {
+        "id": "new-account",
+        "title": "New login account",
+        "mitre": ["T1136.001"],
+        "severity": 50,
+        "type": "match",
+        "match": {"action": "account_created"},
+        "exclude": {"extra.shell": ["/usr/sbin/nologin", "/bin/false"]},
+    }
+    return Rule.model_validate(data | changes)
+
+
+async def test_an_event_matching_the_exclusion_is_not_alerted() -> None:
+    eng = engine(new_account_rule())
+
+    assert len(await eng.evaluate(account_event(1, login_shell="/bin/bash"))) == 1
+    assert await eng.evaluate(account_event(2, login_shell="/usr/sbin/nologin")) == []
+    assert await eng.evaluate(account_event(3, login_shell="/bin/false")) == []
+
+
+async def test_the_exclusion_needs_all_its_conditions_to_hold() -> None:
+    rule = new_account_rule(exclude={"extra.shell": "/usr/sbin/nologin", "extra.uid": 104})
+    eng = engine(rule)
+
+    excluded = await eng.evaluate(account_event(1, login_shell="/usr/sbin/nologin", uid=104))
+    other_uid = await eng.evaluate(account_event(2, login_shell="/usr/sbin/nologin", uid=0))
+
+    assert excluded == []
+    assert len(other_uid) == 1  # a nologin account with UID 0 is not excluded

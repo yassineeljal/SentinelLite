@@ -1,0 +1,5 @@
+# expect: 1
+# description: usermod -aG sudo writes two log lines (group and shadow group): one alert.
+2026-09-24T10:00:00+00:00 prod-web-01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/sbin/usermod -aG sudo evil
+2026-09-24T10:00:00+00:00 prod-web-01 usermod[3129]: add 'evil' to group 'sudo'
+2026-09-24T10:00:00+00:00 prod-web-01 usermod[3132]: add 'evil' to shadow group 'sudo'

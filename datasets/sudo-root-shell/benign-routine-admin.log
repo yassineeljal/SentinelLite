@@ -1,0 +1,8 @@
+# expect: 0
+# description: Routine administration: package updates, service control, logs; non-interactive shells (-c) and shells for another user are not root shells.
+2026-09-24T10:00:00+00:00 prod-web-01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/apt-get update
+2026-09-24T10:00:10+00:00 prod-web-01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/systemctl reload nginx
+2026-09-24T10:00:20+00:00 prod-web-01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/journalctl -u nginx
+2026-09-24T10:00:30+00:00 prod-web-01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/bash -c true
+2026-09-24T10:00:40+00:00 prod-web-01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=www-data ; COMMAND=/usr/bin/bash
+2026-09-24T10:00:50+00:00 prod-web-01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/ls /root

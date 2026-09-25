@@ -1,0 +1,8 @@
+# expect: 0
+# description: System accounts with low but non-zero UIDs.
+2026-09-24T10:00:00+00:00 prod-web-01 useradd[3102]: new group: name=svcx, GID=104
+2026-09-24T10:00:00+00:00 prod-web-01 useradd[3105]: new user: name=svcx, UID=104, GID=104, home=/nonexistent, shell=/usr/sbin/nologin, from=none
+2026-09-24T10:00:01+00:00 prod-web-01 useradd[3108]: new group: name=svcy, GID=10
+2026-09-24T10:00:01+00:00 prod-web-01 useradd[3111]: new user: name=svcy, UID=10, GID=10, home=/var/spool/news, shell=/usr/sbin/nologin, from=none
+2026-09-24T10:00:02+00:00 prod-web-01 useradd[3114]: new group: name=svcw, GID=100
+2026-09-24T10:00:02+00:00 prod-web-01 useradd[3117]: new user: name=svcw, UID=100, GID=100, home=/nonexistent, shell=/usr/sbin/nologin, from=none
