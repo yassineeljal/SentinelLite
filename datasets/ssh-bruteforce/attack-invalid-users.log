@@ -1,4 +1,5 @@
 # expect: 1
+# also: ssh-user-enumeration=1
 # description: Six failures on non-existent user names from one source (Failed password for invalid user).
 2026-09-24T15:00:00+00:00 prod-web-01 sshd[2001]: Failed password for invalid user admin from 203.0.113.50 port 42000 ssh2
 2026-09-24T15:00:02+00:00 prod-web-01 sshd[2002]: Failed password for invalid user test from 203.0.113.50 port 42001 ssh2

@@ -1,0 +1,8 @@
+# expect: 0
+# also: ssh-bruteforce=1
+# description: Five names with failed passwords: the brute-force rule fires (five failures) but five distinct names are below the enumeration threshold.
+2026-09-24T10:00:00+00:00 prod-web-01 sshd[5222]: Failed password for admin from 198.51.100.80 port 45219 ssh2
+2026-09-24T10:00:03+00:00 prod-web-01 sshd[5225]: Failed password for test from 198.51.100.80 port 45222 ssh2
+2026-09-24T10:00:06+00:00 prod-web-01 sshd[5228]: Failed password for oracle from 198.51.100.80 port 45225 ssh2
+2026-09-24T10:00:09+00:00 prod-web-01 sshd[5231]: Failed password for git from 198.51.100.80 port 45228 ssh2
+2026-09-24T10:00:12+00:00 prod-web-01 sshd[5234]: Failed password for pi from 198.51.100.80 port 45231 ssh2

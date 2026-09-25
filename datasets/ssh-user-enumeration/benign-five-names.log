@@ -1,0 +1,7 @@
+# expect: 0
+# description: Five distinct names probed, no failed password: below the threshold.
+2026-09-24T10:00:00+00:00 prod-web-01 sshd[5237]: Invalid user admin from 198.51.100.81 port 45234
+2026-09-24T10:00:03+00:00 prod-web-01 sshd[5240]: Invalid user test from 198.51.100.81 port 45237
+2026-09-24T10:00:06+00:00 prod-web-01 sshd[5243]: Invalid user oracle from 198.51.100.81 port 45240
+2026-09-24T10:00:09+00:00 prod-web-01 sshd[5246]: Invalid user git from 198.51.100.81 port 45243
+2026-09-24T10:00:12+00:00 prod-web-01 sshd[5249]: Invalid user pi from 198.51.100.81 port 45246

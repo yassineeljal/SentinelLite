@@ -1,0 +1,22 @@
+# expect: 0
+# description: One name probed twenty times counts once.
+2026-09-24T10:00:00+00:00 prod-web-01 sshd[5252]: Invalid user oracle from 198.51.100.82 port 45249
+2026-09-24T10:00:02+00:00 prod-web-01 sshd[5255]: Invalid user oracle from 198.51.100.82 port 45252
+2026-09-24T10:00:04+00:00 prod-web-01 sshd[5258]: Invalid user oracle from 198.51.100.82 port 45255
+2026-09-24T10:00:06+00:00 prod-web-01 sshd[5261]: Invalid user oracle from 198.51.100.82 port 45258
+2026-09-24T10:00:08+00:00 prod-web-01 sshd[5264]: Invalid user oracle from 198.51.100.82 port 45261
+2026-09-24T10:00:10+00:00 prod-web-01 sshd[5267]: Invalid user oracle from 198.51.100.82 port 45264
+2026-09-24T10:00:12+00:00 prod-web-01 sshd[5270]: Invalid user oracle from 198.51.100.82 port 45267
+2026-09-24T10:00:14+00:00 prod-web-01 sshd[5273]: Invalid user oracle from 198.51.100.82 port 45270
+2026-09-24T10:00:16+00:00 prod-web-01 sshd[5276]: Invalid user oracle from 198.51.100.82 port 45273
+2026-09-24T10:00:18+00:00 prod-web-01 sshd[5279]: Invalid user oracle from 198.51.100.82 port 45276
+2026-09-24T10:00:20+00:00 prod-web-01 sshd[5282]: Invalid user oracle from 198.51.100.82 port 45279
+2026-09-24T10:00:22+00:00 prod-web-01 sshd[5285]: Invalid user oracle from 198.51.100.82 port 45282
+2026-09-24T10:00:24+00:00 prod-web-01 sshd[5288]: Invalid user oracle from 198.51.100.82 port 45285
+2026-09-24T10:00:26+00:00 prod-web-01 sshd[5291]: Invalid user oracle from 198.51.100.82 port 45288
+2026-09-24T10:00:28+00:00 prod-web-01 sshd[5294]: Invalid user oracle from 198.51.100.82 port 45291
+2026-09-24T10:00:30+00:00 prod-web-01 sshd[5297]: Invalid user oracle from 198.51.100.82 port 45294
+2026-09-24T10:00:32+00:00 prod-web-01 sshd[5300]: Invalid user oracle from 198.51.100.82 port 45297
+2026-09-24T10:00:34+00:00 prod-web-01 sshd[5303]: Invalid user oracle from 198.51.100.82 port 45300
+2026-09-24T10:00:36+00:00 prod-web-01 sshd[5306]: Invalid user oracle from 198.51.100.82 port 45303
+2026-09-24T10:00:38+00:00 prod-web-01 sshd[5309]: Invalid user oracle from 198.51.100.82 port 45306

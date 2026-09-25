@@ -1,0 +1,18 @@
+id: ssh-success-after-failures
+title: SSH login succeeded after repeated failures
+description: >
+  A successful SSH login from a source that failed at least five times in the previous ten minutes:
+  the guessing worked. This is the moment a brute force becomes a compromise, so the severity is
+  higher than the brute-force alert it usually follows. Failures are matched per source address,
+  not per account (password spraying tries many accounts). One alert per source per ten minutes.
+mitre: [T1110, T1078]
+severity: 85
+type: sequence
+group_by: [src_ip]
+sequence:
+  window: 10m
+  first:
+    match: {source: linux.auth, action: login_failed}
+    count: 5
+  then:
+    match: {source: linux.auth, action: login_success}

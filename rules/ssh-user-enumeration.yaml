@@ -1,0 +1,19 @@
+id: ssh-user-enumeration
+title: SSH account enumeration or password spraying
+description: >
+  Six or more DISTINCT user names tried from one source within a minute (failed logins or invalid
+  users). A single name tried many times is a brute force (ssh-bruteforce), many names is a scan for
+  valid accounts or a password spraying. sshd logs both `Invalid user X` and `Failed password for
+  invalid user X` for one attempt: a name counts once. One alert per source per five minutes.
+mitre: [T1110.003, T1087.001]
+severity: 55
+type: threshold
+match:
+  source: linux.auth
+  action: [login_failed, invalid_user]
+group_by: [src_ip]
+threshold:
+  count: 6
+  window: 60s
+  distinct: user_name
+cooldown: 300s

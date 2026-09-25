@@ -1,0 +1,8 @@
+# expect: 0
+# description: Three names from each of two sources: counted per source.
+2026-09-24T10:00:00+00:00 prod-web-01 sshd[5330]: Invalid user admin from 198.51.100.84 port 45327
+2026-09-24T10:00:03+00:00 prod-web-01 sshd[5333]: Invalid user test from 198.51.100.84 port 45330
+2026-09-24T10:00:06+00:00 prod-web-01 sshd[5336]: Invalid user oracle from 198.51.100.84 port 45333
+2026-09-24T10:00:01+00:00 prod-web-01 sshd[5339]: Invalid user git from 198.51.100.85 port 45336
+2026-09-24T10:00:04+00:00 prod-web-01 sshd[5342]: Invalid user pi from 198.51.100.85 port 45339
+2026-09-24T10:00:07+00:00 prod-web-01 sshd[5345]: Invalid user guest from 198.51.100.85 port 45342

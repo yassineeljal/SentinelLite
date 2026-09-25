@@ -12,6 +12,7 @@ from redis.asyncio import Redis
 from sentinel_core.detection.store import (
     LATE_TOLERANCE_MS,
     MAX_EVIDENCE,
+    MAX_WINDOW_ENTRIES,
     InMemoryWindowStore,
     RedisWindowStore,
     WindowStore,
@@ -42,6 +43,29 @@ async def store(request: pytest.FixtureRequest) -> AsyncGenerator[WindowStore]:
     assert REDIS_URL is not None
     client = Redis.from_url(REDIS_URL, decode_responses=True)
     yield RedisWindowStore(client)
+    await client.aclose()
+
+
+@pytest.fixture(
+    params=[
+        "memory",
+        pytest.param(
+            "redis",
+            marks=[
+                pytest.mark.integration,
+                pytest.mark.skipif(REDIS_URL is None, reason="SENTINEL_TEST_REDIS_URL not set"),
+            ],
+        ),
+    ]
+)
+async def small_store(request: pytest.FixtureRequest) -> AsyncGenerator[WindowStore]:
+    """Same stores, capacity of 20 entries per window."""
+    if request.param == "memory":
+        yield InMemoryWindowStore(max_entries=20)
+        return
+    assert REDIS_URL is not None
+    client = Redis.from_url(REDIS_URL, decode_responses=True)
+    yield RedisWindowStore(client, max_entries=20)
     await client.aclose()
 
 
@@ -250,3 +274,184 @@ async def test_acquire_cooldown_redelivery_of_the_same_member(store: WindowStore
     assert await acquire(0, "a") is True  # redelivery of the event that started the cooldown
     assert await acquire(70, "c") is True  # a new period starts...
     assert await acquire(0, "a") is False  # ...and the old trigger no longer re-raises
+
+
+# --- distinct counting ---------------------------------------------------------------------------
+
+
+async def add(
+    store: WindowStore, key: str, value: str, event: str, at: float, *, count: int = 3
+) -> object:
+    """Record `event` for the distinct `value` (member = the value, evidence = the event)."""
+    return await store.record_and_check(
+        key, value, BASE + int(at * S), window_ms=WINDOW, count=count, cooldown_ms=0, evidence=event
+    )
+
+
+async def test_distinct_counts_values_not_events(store: WindowStore, key: str) -> None:
+    for i in range(10):
+        await add(store, key, "alice", f"a{i}", i)  # the same value ten times
+    await add(store, key, "bob", "b0", 10)
+    result = await add(store, key, "carol", "c0", 11)
+
+    assert result.count == 3  # type: ignore[attr-defined]
+    assert result.hit  # type: ignore[attr-defined]
+
+
+async def test_distinct_below_the_count_does_not_hit(store: WindowStore, key: str) -> None:
+    await add(store, key, "alice", "a0", 0)
+    result = await add(store, key, "alice", "a1", 1)
+
+    assert result.count == 1 and not result.hit  # type: ignore[attr-defined]
+
+
+async def test_distinct_evidence_is_the_latest_event_of_each_value_newest_first(
+    store: WindowStore, key: str
+) -> None:
+    await add(store, key, "alice", "a0", 0)
+    await add(store, key, "bob", "b0", 5)
+    await add(store, key, "alice", "a1", 10)  # alice again: her evidence is now a1
+
+    result = await add(store, key, "carol", "c0", 15)
+
+    assert result.evidence == ["c0", "a1", "b0"]  # type: ignore[attr-defined]
+
+
+async def test_a_value_falls_out_of_the_window_when_not_seen_again(
+    store: WindowStore, key: str
+) -> None:
+    await add(store, key, "alice", "a0", 0)
+    await add(store, key, "bob", "b0", 30)
+    result = await add(
+        store, key, "carol", "c0", 61
+    )  # window [1, 61]: alice (last seen at 0) is out
+
+    assert result.count == 2  # type: ignore[attr-defined]
+    assert result.evidence == ["c0", "b0"]  # type: ignore[attr-defined]
+
+
+async def test_distinct_replay_of_the_same_event_is_idempotent(
+    store: WindowStore, key: str
+) -> None:
+    for _ in range(5):
+        result = await add(store, key, "alice", "a0", 0)
+
+    assert result.count == 1  # type: ignore[attr-defined]
+
+
+async def test_distinct_evidence_of_evicted_values_is_not_returned(
+    store: WindowStore, key: str
+) -> None:
+    await add(store, key, "old", "o0", 0)
+    far = 200  # beyond window + tolerance: "old" is evicted from the window and from the evidence
+    await add(store, key, "new1", "n1", far)
+    result = await add(store, key, "new2", "n2", far + 1)
+
+    assert result.evidence == ["n2", "n1"]  # type: ignore[attr-defined]
+
+
+# --- capacity: a flood cannot make a window grow without bound ------------------------------
+
+
+async def test_the_window_keeps_only_the_newest_entries_up_to_its_capacity(
+    small_store: WindowStore, key: str
+) -> None:
+    result = None
+    for i in range(30):
+        result = await small_store.record_and_check(
+            key, f"e{i:02d}", BASE + i * 100, window_ms=WINDOW, count=5, cooldown_ms=0
+        )
+
+    assert result is not None
+    assert result.count == 20  # the ten oldest were dropped
+    assert result.evidence[0] == "e29"
+
+
+async def test_the_capacity_also_bounds_distinct_windows(
+    small_store: WindowStore, key: str
+) -> None:
+    result = None
+    for i in range(30):
+        result = await small_store.record_and_check(
+            key,
+            f"v{i:02d}",
+            BASE + i * 100,
+            window_ms=WINDOW,
+            count=5,
+            cooldown_ms=0,
+            evidence=f"e{i:02d}",
+        )
+
+    assert result is not None
+    assert result.count == 20 and result.evidence[0] == "e29"
+
+
+def test_the_default_capacity_is_generous_but_finite() -> None:
+    assert 1000 <= MAX_WINDOW_ENTRIES <= 100_000
+
+
+# --- peek: read a window without writing to it -------------------------------------------------
+
+
+async def test_peek_counts_without_recording_anything(store: WindowStore, key: str) -> None:
+    for i in range(3):
+        await store.record_and_check(
+            key, f"e{i}", BASE + i * S, window_ms=WINDOW, count=99, cooldown_ms=0
+        )
+
+    first = await store.peek(key, BASE + 10 * S, window_ms=WINDOW)
+    again = await store.peek(key, BASE + 10 * S, window_ms=WINDOW)
+
+    assert first.count == again.count == 3 and not first.hit
+    assert first.evidence == ["e2", "e1", "e0"]
+
+
+async def test_peek_respects_the_window_of_the_event_it_is_asked_for(
+    store: WindowStore, key: str
+) -> None:
+    for i in range(3):
+        await store.record_and_check(
+            key, f"e{i}", BASE + i * S, window_ms=WINDOW, count=99, cooldown_ms=0
+        )
+
+    later = await store.peek(key, BASE + 100 * S, window_ms=WINDOW)  # window [40, 100]: all older
+
+    assert later.count == 0 and later.evidence == []
+
+
+async def test_peeking_an_unknown_key_is_empty(store: WindowStore, key: str) -> None:
+    result = await store.peek(key, BASE, window_ms=WINDOW)
+
+    assert result.count == 0 and result.evidence == [] and not result.hit
+
+
+async def test_distinct_cooldown_identifies_the_trigger_by_its_event_not_by_its_value(
+    store: WindowStore, key: str
+) -> None:
+    """sshd logs two lines for one attempt on a name (`Invalid user X`, then `Failed password for
+    invalid user X`): both carry the same distinct value. The second event is NOT the trigger
+    coming back after a crash, it is a new event inside the cooldown: no second alert."""
+    for i in range(2):
+        await store.record_and_check(
+            key,
+            f"v{i}",
+            BASE + i * S,
+            window_ms=WINDOW,
+            count=3,
+            cooldown_ms=300_000,
+            evidence=f"e{i}",
+        )
+    trigger = await store.record_and_check(
+        key, "v2", BASE + 2 * S, window_ms=WINDOW, count=3, cooldown_ms=300_000, evidence="e2"
+    )
+
+    same_value_new_event = await store.record_and_check(
+        key, "v2", BASE + 3 * S, window_ms=WINDOW, count=3, cooldown_ms=300_000, evidence="e3"
+    )
+    redelivered_trigger = await store.record_and_check(
+        key, "v2", BASE + 2 * S, window_ms=WINDOW, count=3, cooldown_ms=300_000, evidence="e2"
+    )
+
+    assert trigger.hit
+    assert not same_value_new_event.hit  # a new event of the same value: cooldown applies
+    assert redelivered_trigger.hit  # the trigger event itself, redelivered: raised again

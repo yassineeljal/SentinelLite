@@ -1,0 +1,8 @@
+# expect: 0
+# description: A login, then (much later and slowly) failures with no further success: order matters.
+2026-09-24T10:00:00+00:00 prod-web-01 sshd[5090]: Accepted publickey for alice from 10.0.0.5 port 55087 ssh2: ED25519 SHA256:abc123
+2026-09-24T10:02:00+00:00 prod-web-01 sshd[5093]: Failed password for alice from 10.0.0.5 port 45090 ssh2
+2026-09-24T10:03:40+00:00 prod-web-01 sshd[5096]: Failed password for alice from 10.0.0.5 port 45093 ssh2
+2026-09-24T10:05:20+00:00 prod-web-01 sshd[5099]: Failed password for alice from 10.0.0.5 port 45096 ssh2
+2026-09-24T10:07:00+00:00 prod-web-01 sshd[5102]: Failed password for alice from 10.0.0.5 port 45099 ssh2
+2026-09-24T10:08:40+00:00 prod-web-01 sshd[5105]: Failed password for alice from 10.0.0.5 port 45102 ssh2

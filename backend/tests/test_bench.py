@@ -64,8 +64,8 @@ async def test_the_report_counts_detections_and_false_alerts(
     assert "| Benign scenarios | 3 (1 shared across all rules) |" in report
     assert "| Benign scenarios with a false alert | 0/3 |" in report
     assert "| False alerts on benign traffic | 0 |" in report
-    assert "| ssh-bruteforce | T1110 | 1/1 | 2/2 | 0 |" in report
-    assert "| ssh-root-login | T1078 | 1/1 | 2/2 | 0 |" in report
+    assert "| ssh-bruteforce | T1110 | 1/1 | 0/0 | 2/2 | 0 |" in report
+    assert "| ssh-root-login | T1078 | 1/1 | 0/0 | 2/2 | 0 |" in report
     assert "the attack" in report  # descriptions are shown in the scenario table
 
 
@@ -163,3 +163,27 @@ async def test_throughput_is_measured_without_end_to_end_claims(
     result = await measure_throughput(rules, datasets, repeat=3)
 
     assert result.events > 0 and result.seconds > 0 and result.events_per_second > 0
+
+
+async def test_negative_scenarios_are_reported_separately_and_are_not_false_positives(
+    datasets: Path, rules_dir: Path
+) -> None:
+    """A negative scenario: the owning rule must NOT fire while a related rule does, as declared."""
+    failures = "\n".join(FAILED.format(i=i) for i in range(5))
+    write(
+        datasets,
+        "ssh-root-login",
+        "negative-brute-force-only.log",
+        f"# expect: 0\n# also: ssh-bruteforce=1\n# description: related rule only\n{failures}\n",
+    )
+
+    run = await run_benchmark(load_rules(rules_dir), datasets)
+    report = render_report(run)
+
+    assert run.ok
+    assert "| Negative scenarios (the rule must stay silent) | 1 (1/1 as expected) |" in report
+    assert "| ssh-root-login | T1078 | 1/1 | 1/1 | 2/2 | 0 |" in report
+    assert (
+        "| Benign scenarios with a false alert | 0/3 |" in report
+    )  # the declared alert is not one
+    assert "| ssh-root-login | negative-brute-force-only | negative |" in report

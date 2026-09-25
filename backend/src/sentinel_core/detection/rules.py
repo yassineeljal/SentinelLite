@@ -80,11 +80,79 @@ def _check_field(name: str) -> None:
         )
 
 
+# The state store keeps at most 10 000 entries per window (store.py): counts above this could never
+# be reached, so they are refused at load time instead of silently never firing.
+MAX_COUNT = 5000
+
+
+def check_conditions(conditions: Mapping[str, Condition]) -> None:
+    """Validate the fields and enum values of a `match` / `exclude` mapping."""
+    for name, condition in conditions.items():
+        _check_field(name)
+        values = condition if isinstance(condition, list) else [condition]
+        if not values:
+            raise ValueError(f"field {name!r}: empty list of values")
+        enum = _ENUM_FIELDS.get(name)
+        if enum is not None:
+            allowed = {member.value for member in enum}
+            for value in values:
+                if value not in allowed:
+                    raise ValueError(
+                        f"unknown value {value!r} for field {name!r} "
+                        f"(known: {', '.join(sorted(allowed))})"
+                    )
+
+
 class ThresholdSpec(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    count: int = Field(ge=2)
+    count: int = Field(ge=2, le=MAX_COUNT)
     window_seconds: Duration = Field(alias="window", gt=0)
+    # Count the DISTINCT values of this field among the matching events instead of the events
+    # themselves (e.g. distinct: user_name for user enumeration): a value seen many times counts
+    # once.
+    distinct: str | None = None
+
+    @field_validator("distinct")
+    @classmethod
+    def _check_distinct(cls, name: str | None) -> str | None:
+        if name is not None:
+            _check_field(name)
+        return name
+
+
+class SequenceStep(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    match: dict[str, Condition]
+    exclude: dict[str, Condition] = Field(default_factory=dict)
+    count: int = Field(default=1, ge=1, le=MAX_COUNT)
+
+    @field_validator("match", "exclude")
+    @classmethod
+    def _check(cls, conditions: dict[str, Condition], info: ValidationInfo) -> dict[str, Condition]:
+        if info.field_name == "match" and not conditions:
+            raise ValueError("a step needs at least one condition in 'match'")
+        check_conditions(conditions)
+        return conditions
+
+
+class SequenceSpec(BaseModel):
+    """`first` (at least `first.count` events) followed by `then`, within `window`, per group."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    window_seconds: Duration = Field(alias="window", gt=0)
+    first: SequenceStep
+    then: SequenceStep
+
+    @model_validator(mode="after")
+    def _then_has_no_count(self) -> "SequenceSpec":
+        if self.then.count != 1:
+            raise ValueError(
+                "'then' is the event that completes the sequence: it cannot have a count"
+            )
+        return self
 
 
 class Rule(BaseModel):
@@ -95,13 +163,14 @@ class Rule(BaseModel):
     description: str = ""
     mitre: list[Annotated[str, Field(pattern=r"^T\d{4}(\.\d{3})?$")]] = Field(min_length=1)
     severity: int = Field(ge=0, le=100)
-    type: Literal["match", "threshold"]
-    match: dict[str, Condition]
+    type: Literal["match", "threshold", "sequence"]
+    match: dict[str, Condition] = Field(default_factory=dict)
     # Events that satisfy ALL these conditions are left out even if `match` holds (e.g. accounts
     # whose shell is nologin). Same syntax as `match`.
     exclude: dict[str, Condition] = Field(default_factory=dict)
     group_by: list[str] = Field(default_factory=list)
     threshold: ThresholdSpec | None = None
+    sequence: SequenceSpec | None = None
     cooldown_seconds: Duration = Field(default=0, alias="cooldown", ge=0)
     # Whose events are counted together. "agent" (default): each agent has its own state, so a
     # compromised agent can neither frame an IP nor disturb what other agents report. "global":
@@ -120,36 +189,19 @@ class Rule(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _default_cooldown(cls, data: Any) -> Any:
-        # A threshold rule without an explicit cooldown stays quiet for one window after an
-        # alert, so a single attack raises a single alert instead of one per extra event.
-        if isinstance(data, Mapping) and data.get("type") == "threshold":
-            threshold = data.get("threshold")
-            if "cooldown" not in data and "cooldown_seconds" not in data:
-                if isinstance(threshold, Mapping) and "window" in threshold:
-                    return {**data, "cooldown": threshold["window"]}
+        # A threshold or sequence rule without an explicit cooldown stays quiet for one window after
+        # an alert, so a single attack raises a single alert instead of one per extra event.
+        if isinstance(data, Mapping) and "cooldown" not in data and "cooldown_seconds" not in data:
+            spec = data.get(str(data.get("type")))
+            if data.get("type") in ("threshold", "sequence") and isinstance(spec, Mapping):
+                if "window" in spec:
+                    return {**data, "cooldown": spec["window"]}
         return data
 
     @field_validator("match", "exclude")
     @classmethod
-    def _check_conditions(
-        cls, conditions: dict[str, Condition], info: ValidationInfo
-    ) -> dict[str, Condition]:
-        if info.field_name == "match" and not conditions:
-            raise ValueError("match must contain at least one condition")
-        for name, condition in conditions.items():
-            _check_field(name)
-            values = condition if isinstance(condition, list) else [condition]
-            if not values:
-                raise ValueError(f"field {name!r}: empty list of values")
-            enum = _ENUM_FIELDS.get(name)
-            if enum is not None:
-                allowed = {member.value for member in enum}
-                for value in values:
-                    if value not in allowed:
-                        raise ValueError(
-                            f"unknown value {value!r} for field {name!r} "
-                            f"(known: {', '.join(sorted(allowed))})"
-                        )
+    def _check_conditions(cls, conditions: dict[str, Condition]) -> dict[str, Condition]:
+        check_conditions(conditions)
         return conditions
 
     @field_validator("group_by")
@@ -163,13 +215,24 @@ class Rule(BaseModel):
 
     @model_validator(mode="after")
     def _check_type_consistency(self) -> "Rule":
+        if self.type in ("match", "threshold") and not self.match:
+            raise ValueError(f"a {self.type} rule needs at least one condition in 'match'")
         if self.type == "threshold":
             if self.threshold is None:
                 raise ValueError("a threshold rule needs a 'threshold' (count and window)")
             if not self.group_by:
                 raise ValueError("a threshold rule needs 'group_by' (what to count per)")
         elif self.threshold is not None:
-            raise ValueError("a match rule cannot have a 'threshold'")
+            raise ValueError(f"a {self.type} rule cannot have a 'threshold'")
+        if self.type == "sequence":
+            if self.sequence is None:
+                raise ValueError("a sequence rule needs a 'sequence' (window, first, then)")
+            if not self.group_by:
+                raise ValueError("a sequence rule needs 'group_by' (what the steps share)")
+            if self.match or self.exclude:
+                raise ValueError("a sequence rule puts its conditions in the steps, not in 'match'")
+        elif self.sequence is not None:
+            raise ValueError(f"a {self.type} rule cannot have a 'sequence'")
         return self
 
 

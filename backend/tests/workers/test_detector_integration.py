@@ -163,6 +163,10 @@ async def test_an_attack_goes_through_the_whole_pipeline_to_one_alert(pipeline: 
 def read_scenario(rule_id: str, scenario: str) -> tuple[int, list[str]]:
     lines = (REPO_ROOT / "datasets" / rule_id / f"{scenario}.log").read_text().splitlines()
     expected = next(int(m[1]) for x in lines if (m := re.fullmatch(r"# expect: (\d+)", x)))
+    # Alerts other rules legitimately raise on the same attack (`# also: rule=n`) are stored too.
+    for x in lines:
+        if x.startswith("# also:"):
+            expected += sum(int(n) for n in re.findall(r"=(\d+)", x))
     return expected, [x for x in lines if x and not x.startswith("#")]
 
 

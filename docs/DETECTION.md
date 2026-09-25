@@ -14,12 +14,12 @@ description: >                # free text, shown to analysts
   Five or more failed SSH logins from the same source IP within 60 seconds.
 mitre: [T1110]                # at least one technique, e.g. T1110 or T1059.001
 severity: 60                  # 0-100
-type: threshold               # match | threshold
+type: threshold               # match | threshold | sequence
 match:                        # ALL conditions must hold (AND)
   source: linux.auth
   action: login_failed        # a list means any-of: action: [login_failed, invalid_user]
 group_by: [src_ip]            # threshold: count per group. match: cooldown per group (optional)
-threshold: {count: 5, window: 60s}   # threshold rules only; count >= 2
+threshold: {count: 5, window: 60s}   # threshold rules only; 2 <= count <= 5000. Add `distinct: <field>` to count distinct values
 cooldown: 300s                # optional. Default: the window (threshold) / none (match). 0s disables
 scope: agent                  # optional. agent (default): state per agent | global: events of all agents together
 enabled: true                 # optional
@@ -45,8 +45,37 @@ enabled: true                 # optional
 |---|---|---|
 | `match` | implemented | one event satisfies the conditions (and the group's cooldown allows it) |
 | `threshold` | implemented | `count` matching events of the same group fall within `window` |
-| `sequence` | planned (M2) | ordered events per key, e.g. success after N failures |
+| `sequence` | implemented | a `then` event arrives within `window` after `first` (at least `first.count` events) for the same group |
 | `stateful` | planned (M2/M3) | needs history/enrichment: impossible travel, off-hours |
+
+**`threshold` with `distinct`.** `threshold: {count: 6, window: 60s, distinct: user_name}` counts the
+different values of a field instead of the events: ten attempts on one name count once. Used for user
+enumeration and password spraying, where the interesting signal is the number of *names*, not of
+failures. A matching event that lacks the field is skipped. The count is per (rule, group); values are
+hashed before they reach Redis. The cooldown identity is the *event*, not the value, so a second event
+carrying an already-counted name cannot re-raise the alert.
+
+**`sequence`.** Two steps that share a group (`group_by` is required):
+
+```yaml
+type: sequence
+group_by: [src_ip]
+sequence:
+  window: 10m
+  first:                                  # at least `count` of these (default 1, max 5000)
+    match: {source: linux.auth, action: login_failed}
+    count: 5
+  then:                                   # the event that completes the sequence (no count)
+    match: {source: linux.auth, action: login_success}
+```
+
+Each step has its own `match` (required) and optional `exclude`; a sequence rule has no top-level
+`match`/`exclude`/`threshold`. Semantics: the `then` event is checked against the `first` events
+already in the window **before** it is itself recorded, so one event never completes a sequence with
+itself (a step may match both shapes). The alert's evidence is the `then` event followed by the
+`first` events; the cooldown (default: the window) is per group. Order matters: successes before the
+failures do not count, and neither do failures older than `window`. Both steps use the same
+group values, so `group_by: [user_name, host]` ties an account creation and its group change together.
 
 Fields and values available per source: see [`EVENTS.md`](EVENTS.md).
 
@@ -94,6 +123,9 @@ engine rather than plain `re`.
   - **Invariant**: `MAX_FUTURE_SKEW` (5 s) must stay below the store's late tolerance (30 s), so
     that a date accepted within the skew can never evict an event still inside any window's
     tolerance. A test enforces it.
+- **Capacity.** A window keeps at most 10 000 entries (oldest dropped first): a flood cannot grow the
+  state without bound, and it is why `count` is capped at 5000 at load time (a larger count could never
+  be reached, so it is refused instead of silently never firing).
 - **Evidence** is the list of event ids in the window, newest first, capped at 50 (`match_count`
   still reports the true count).
 - **State store.** `RedisWindowStore` keeps one sorted set per (rule, group) and evaluates each
@@ -113,13 +145,19 @@ engine rather than plain `re`.
 | `linux-privileged-group-member` | T1098.007 | match | a member added to `sudo`, `admin`, `wheel`, `root`, `shadow`, `disk`, `docker` or `lxd` (usermod and gpasswd count once) |
 | `sudo-root-shell` | T1548.003 | match | an interactive root shell through sudo (`sudo -i`, `-s`, `su`, `su -`, `bash`…): the logged command is exactly a shell with no arguments. One alert per user and host per minute. Administrators do this routinely: moderate severity, the value is the trail |
 | `sudo-auth-failures` | T1110.001, T1548.003 | threshold | ≥ 3 failed sudo **invocations** (wrong password or not in sudoers) per user and host in 10 min. Counts invocations, not guesses: sudo asks up to three times per invocation and logs one summary line |
+| `ssh-success-after-failures` | T1110, T1078 | sequence | a successful login from a source that failed ≥ 5 times in the previous 10 min: the guessing worked. Per source address (also covers spraying), severity 85, one alert per source per 10 min |
+| `ssh-user-enumeration` | T1110.003, T1087.001 | threshold (distinct) | ≥ 6 **distinct** user names tried from one source in 60 s (`Invalid user` and `Failed password for invalid user` of one attempt count once). One name tried many times is `ssh-bruteforce`, not this |
+| `linux-new-admin-account` | T1136.001, T1098.007 | sequence | an account is created and, within 15 min, added to `sudo`/`admin`/`wheel`/`root` on the same host: a backdoor administrator. The two single-step rules also fire; this one is the correlation. Other privileged groups (`docker`, `shadow`…) are not part of it: **blind spot** |
 
 ## Adding a rule
 
 1. Write `rules/<id>.yaml`.
 2. Add scenarios under `datasets/<id>/`: raw log lines of the rule's source, time-ordered, in files
-   named `attack*.log` and `benign*.log` (at least one of each; several variants are better: boundary
-   cases, IPv6, noise, slow attacks, look-alikes). Each file starts with header comments:
+   named `attack*.log`, `benign*.log` and, optionally, `negative*.log` (at least one attack and one
+   benign; several variants are better: boundary cases, IPv6, noise, slow attacks, look-alikes).
+   A **negative** scenario is a near miss: it starts with `# expect: 0` (the owner rule must stay
+   silent) and may declare `# also: other-rule=n` for the related rules that do fire, e.g. a sequence
+   whose second step arrives one minute too late. Each file starts with header comments:
 
    ```
    # expect: 2                      required. Attack: alerts the rule must raise (>= 1).
@@ -199,7 +237,9 @@ data on a running stack, either use groups (e.g. IPs) not seen live, or clear th
 
 ## Limits
 
-- Two rules, one source (`linux.auth`); no `sequence` / `stateful` rules, no regex conditions.
+- Ten rules, one source (`linux.auth`); no `stateful` rules (time of day, impossible travel), no regex conditions.
+- `sequence` has two steps only (no chains of three), and its `first` step counts events, not distinct values.
+- `ssh-success-after-failures` counts failures per source address: an attacker who stays under five failures per ten minutes, or who rotates addresses, is not caught by it.
 - No hot reload of rules; no per-rule metrics yet.
 - Alerts have no status, assignee or enrichment yet (incidents and enrichment are M3/M4).
 - No poison-event handling beyond containment of rule exceptions.

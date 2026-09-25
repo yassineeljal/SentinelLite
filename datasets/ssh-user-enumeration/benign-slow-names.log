@@ -1,0 +1,8 @@
+# expect: 0
+# description: Six distinct names but one every two minutes: never six inside a minute.
+2026-09-24T10:00:00+00:00 prod-web-01 sshd[5312]: Invalid user admin from 198.51.100.83 port 45309
+2026-09-24T10:02:00+00:00 prod-web-01 sshd[5315]: Invalid user test from 198.51.100.83 port 45312
+2026-09-24T10:04:00+00:00 prod-web-01 sshd[5318]: Invalid user oracle from 198.51.100.83 port 45315
+2026-09-24T10:06:00+00:00 prod-web-01 sshd[5321]: Invalid user git from 198.51.100.83 port 45318
+2026-09-24T10:08:00+00:00 prod-web-01 sshd[5324]: Invalid user pi from 198.51.100.83 port 45321
+2026-09-24T10:10:00+00:00 prod-web-01 sshd[5327]: Invalid user guest from 198.51.100.83 port 45324

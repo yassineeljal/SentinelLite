@@ -1,0 +1,8 @@
+# expect: 0
+# description: Five slow failures, then a success twelve minutes later: outside the ten-minute window.
+2026-09-24T10:00:00+00:00 prod-web-01 sshd[5108]: Failed password for deploy from 203.0.113.7 port 45105 ssh2
+2026-09-24T10:01:40+00:00 prod-web-01 sshd[5111]: Failed password for deploy from 203.0.113.7 port 45108 ssh2
+2026-09-24T10:03:20+00:00 prod-web-01 sshd[5114]: Failed password for deploy from 203.0.113.7 port 45111 ssh2
+2026-09-24T10:05:00+00:00 prod-web-01 sshd[5117]: Failed password for deploy from 203.0.113.7 port 45114 ssh2
+2026-09-24T10:06:40+00:00 prod-web-01 sshd[5120]: Failed password for deploy from 203.0.113.7 port 45117 ssh2
+2026-09-24T10:18:40+00:00 prod-web-01 sshd[5123]: Accepted password for deploy from 203.0.113.7 port 55120 ssh2

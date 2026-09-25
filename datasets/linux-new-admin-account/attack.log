@@ -1,0 +1,7 @@
+# expect: 1
+# also: linux-new-account=1, linux-privileged-group-member=1
+# description: An account is created and added to sudo thirty seconds later: a backdoor administrator (both single-step rules fire too).
+2026-09-24T10:00:00+00:00 prod-web-01 useradd[5348]: new group: name=evil, GID=1000
+2026-09-24T10:00:00+00:00 prod-web-01 useradd[5351]: new user: name=evil, UID=1000, GID=1000, home=/home/evil, shell=/bin/bash, from=none
+2026-09-24T10:00:30+00:00 prod-web-01 usermod[5354]: add 'evil' to group 'sudo'
+2026-09-24T10:00:30+00:00 prod-web-01 usermod[5357]: add 'evil' to shadow group 'sudo'

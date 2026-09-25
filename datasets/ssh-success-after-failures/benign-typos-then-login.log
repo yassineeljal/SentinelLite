@@ -1,0 +1,6 @@
+# expect: 0
+# description: A legitimate user fails three times, then logs in: below five failures.
+2026-09-24T10:00:00+00:00 prod-web-01 sshd[5078]: Failed password for alice from 10.0.0.5 port 45075 ssh2
+2026-09-24T10:00:05+00:00 prod-web-01 sshd[5081]: Failed password for alice from 10.0.0.5 port 45078 ssh2
+2026-09-24T10:00:10+00:00 prod-web-01 sshd[5084]: Failed password for alice from 10.0.0.5 port 45081 ssh2
+2026-09-24T10:00:20+00:00 prod-web-01 sshd[5087]: Accepted password for alice from 10.0.0.5 port 55084 ssh2

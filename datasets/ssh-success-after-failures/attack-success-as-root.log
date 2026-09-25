@@ -1,0 +1,9 @@
+# expect: 1
+# also: ssh-root-login=1
+# description: Slow guessing that ends with a root login: the sequence rule and the root-login rule both fire.
+2026-09-24T10:00:00+00:00 prod-web-01 sshd[5060]: Failed password for root from 203.0.113.7 port 45057 ssh2
+2026-09-24T10:01:30+00:00 prod-web-01 sshd[5063]: Failed password for root from 203.0.113.7 port 45060 ssh2
+2026-09-24T10:03:00+00:00 prod-web-01 sshd[5066]: Failed password for root from 203.0.113.7 port 45063 ssh2
+2026-09-24T10:04:30+00:00 prod-web-01 sshd[5069]: Failed password for root from 203.0.113.7 port 45066 ssh2
+2026-09-24T10:06:00+00:00 prod-web-01 sshd[5072]: Failed password for root from 203.0.113.7 port 45069 ssh2
+2026-09-24T10:08:20+00:00 prod-web-01 sshd[5075]: Accepted password for root from 203.0.113.7 port 55072 ssh2

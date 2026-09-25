@@ -1,12 +1,15 @@
 """Attack and benign log scenarios: the executable specification (and the benchmark data) of rules.
 
-Layout: `datasets/<rule-id>/<name>.log`, where `<name>` starts with `attack` or `benign`, plus
+Layout: `datasets/<rule-id>/<name>.log`, where `<name>` starts with `attack`, `benign` or
+`negative`, plus
 `datasets/_shared/benign*.log`: benign traffic (e.g. a normal day) that EVERY rule must stay silent
 on. Each file
 is a series of raw log lines with a header of comment lines:
 
     # expect: 2                      required. Attack: alerts the owning rule must raise (>= 1).
                                      Benign: must be 0, and NO rule may alert at all.
+                                     Negative: must be 0 for the owning rule (it must NOT fire),
+                                     while the related rules fire exactly as declared with `# also`.
     # also: other-rule=1, third=2    optional. Alerts other rules legitimately raise on an attack.
     # description: one line          optional, shown in the benchmark report
     # source: linux.auth             optional (default linux.auth): which normalizer reads the lines
@@ -47,7 +50,7 @@ class ScenarioError(Exception):
 class Scenario:
     rule_id: str
     name: str
-    kind: Literal["attack", "benign"]
+    kind: Literal["attack", "benign", "negative"]
     expect: int
     lines: tuple[str, ...]
     path: Path
@@ -60,7 +63,8 @@ class Scenario:
         """Alerts per rule this scenario must produce, everything else being silent."""
         if self.kind == "benign":
             return {}
-        return {self.rule_id: self.expect} | {k: v for k, v in self.also.items() if v}
+        owner = {self.rule_id: self.expect} if self.expect else {}
+        return owner | {k: v for k, v in self.also.items() if v}
 
 
 @dataclass(frozen=True)
@@ -88,13 +92,17 @@ def _parse_also(value: str, where: str) -> dict[str, int]:
 def parse_scenario(path: Path, rule_id: str) -> Scenario:
     where = str(path)
     name = path.stem
-    kind: Literal["attack", "benign"]
+    kind: Literal["attack", "benign", "negative"]
     if name.startswith("attack"):
         kind = "attack"
     elif name.startswith("benign"):
         kind = "benign"
+    elif name.startswith("negative"):
+        kind = "negative"
     else:
-        raise ScenarioError(f"{where}: the file name must start with 'attack' or 'benign'")
+        raise ScenarioError(
+            f"{where}: the file name must start with 'attack', 'benign' or 'negative'"
+        )
 
     headers: dict[str, str] = {}
     lines: list[str] = []
@@ -118,6 +126,10 @@ def parse_scenario(path: Path, rule_id: str) -> Scenario:
         raise ScenarioError(f"{where}: an attack scenario must expect at least 1 alert")
     if kind == "benign" and expect != 0:
         raise ScenarioError(f"{where}: a benign scenario must expect 0 alerts")
+    if kind == "negative" and expect != 0:
+        raise ScenarioError(
+            f"{where}: a negative scenario must expect 0 alerts from its rule (that is the point)"
+        )
     if not lines:
         raise ScenarioError(f"{where}: no log lines")
     source = headers.get("source", "linux.auth")
@@ -202,7 +214,7 @@ async def run_scenario(
             alerts[alert.rule_id] += 1
 
     problems: list[str] = []
-    if scenario.kind == "attack":
+    if scenario.kind in ("attack", "negative"):
         for rule_id in sorted(set(alerts) | set(scenario.also) | {scenario.rule_id}):
             wanted = (
                 scenario.expect if rule_id == scenario.rule_id else scenario.also.get(rule_id, 0)
