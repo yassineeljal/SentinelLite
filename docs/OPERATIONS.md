@@ -18,7 +18,7 @@ curl localhost:8000/healthz   # {"status":"ok","version":"..."}
 ```
 
 Startup order: `postgres` and `redis` become healthy → `migrate` applies the Alembic migrations and
-exits → `api` and `normalizer` start. Only the API is published, on `127.0.0.1:8000` by default. Once the lab
+exits → `api`, `normalizer` and `detector` start. Only the API is published, on `127.0.0.1:8000` by default. Once the lab
 network exists, set `SENTINEL_BIND_ADDR` to the host-only interface IP (never `0.0.0.0`).
 
 ## Administer agents
@@ -97,6 +97,25 @@ The Postgres tests truncate `agents`, `events` and `events_dead_letter` in the t
 `SENTINEL_TEST_DATABASE_URL` at a database that holds real data. CI runs the same tests with
 service containers.
 
+## Detector worker and alerts
+
+The `detector` service consumes `events.normalized`, applies the rules in `rules/` and writes the
+`alerts` table. Rules are read once at startup (mounted read-only): after editing them,
+`docker compose restart detector`. An invalid or empty rule set makes it exit with the reason.
+
+```bash
+docker compose logs -f detector                                  # "ALERT <rule> ..." per detection
+docker compose exec api sentinel alerts list [--rule ssh-bruteforce] [--limit 50]
+docker compose exec api sentinel alerts show <id-prefix>         # evidence + detection latency
+docker compose exec redis redis-cli xlen events.normalized       # backlog for the detector
+docker compose exec redis redis-cli --scan --pattern 'sl:det:*'  # window / cooldown state
+```
+
+Try it without the lab: send failed SSH logins through the API (see `INGESTION_API.md`), e.g. six
+`Failed password for root from 203.0.113.7` lines dated now, within a few seconds, then run
+`sentinel alerts list`. Replaying the shipped scenarios (`datasets/`) through the API works too,
+but read "Replaying old logs" in [`DETECTION.md`](DETECTION.md) first.
+
 ## Detection rules and scenarios
 
 ```bash
@@ -118,5 +137,8 @@ of the store contract tests runs when `SENTINEL_TEST_REDIS_URL` is set. See
 | `POSTGRES_PASSWORD` error on `docker compose` | `deploy/.env` is missing: copy it from `.env.example` |
 | Ingestion answers `401` for a valid key | The agent was revoked, or the key was created against another database |
 | Ingestion answers `429` | `events.raw` is above its high watermark: the `normalizer` service is down or stuck (check `docker compose ps` / `logs normalizer`, and `redis-cli xpending events.raw normalizers`) |
+| Attack sent but no alert | `docker compose logs detector` (did it start? rules loaded?); is the group's state ahead in time (old-dated replay, see DETECTION.md)? did the line normalize (`events_dead_letter`)? |
+| `detector` exits at startup | Invalid or empty rule set: the log lists every faulty file. Fix `rules/` and restart |
+| `events.normalized` keeps growing | The detector is down or slower than the normalizer; the normalizer pauses at the watermark |
 | Events missing but the stream is empty | Look in `events_dead_letter` (malformed line or source without a normalizer), or the line was well-formed with nothing to model |
 | `events_default` keeps growing | Events are dated outside yesterday..today+7: wrong agent clock, or replayed old logs |

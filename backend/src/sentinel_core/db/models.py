@@ -17,7 +17,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import INET, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, INET, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # Deterministic constraint names keep Alembic migrations and autogenerate reproducible.
@@ -95,4 +95,30 @@ class DeadLetter(Base):
     raw: Mapped[str] = mapped_column(Text)
     error: Mapped[str] = mapped_column(String(500))
     received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AlertRecord(Base):
+    """A detection. `alert_id` is deterministic, so persisting the same alert twice is a no-op."""
+
+    __tablename__ = "alerts"
+    __table_args__ = (
+        Index("ix_alerts_ts", "ts"),
+        Index("ix_alerts_rule_id_ts", "rule_id", "ts"),
+        Index("ix_alerts_src_ip_ts", "src_ip", "ts"),
+    )
+
+    alert_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    rule_id: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(200))
+    mitre: Mapped[list[str]] = mapped_column(ARRAY(String(16)))
+    severity: Mapped[int] = mapped_column(SmallInteger)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    group_values: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    src_ip: Mapped[str | None] = mapped_column(INET, default=None)
+    host: Mapped[str | None] = mapped_column(String(255), default=None)
+    user_name: Mapped[str | None] = mapped_column(String(256), default=None)
+    # Evidence: event ids, newest first. No foreign key: `events` is partitioned by time.
+    event_ids: Mapped[list[str]] = mapped_column(JSONB)
+    match_count: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
