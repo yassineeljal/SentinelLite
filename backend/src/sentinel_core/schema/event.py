@@ -28,6 +28,10 @@ class Action(StrEnum):
     LOGIN_FAILED = "login_failed"
     LOGIN_SUCCESS = "login_success"
     INVALID_USER = "invalid_user"
+    SUDO_COMMAND = "sudo_command"
+    SUDO_FAILED = "sudo_failed"
+    ACCOUNT_CREATED = "account_created"
+    GROUP_MEMBER_ADDED = "group_member_added"
 
 
 class Outcome(StrEnum):

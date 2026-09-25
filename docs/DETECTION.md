@@ -44,6 +44,8 @@ enabled: true                 # optional
 | `sequence` | planned (M2) | ordered events per key, e.g. success after N failures |
 | `stateful` | planned (M2/M3) | needs history/enrichment: impossible travel, off-hours |
 
+Fields and values available per source: see [`EVENTS.md`](EVENTS.md).
+
 Not supported yet: regular expressions and substring conditions (needed by the web/SQLi rules).
 Regexes are evaluated against attacker-controlled text, so they will come with a bounded-time
 engine rather than plain `re`.

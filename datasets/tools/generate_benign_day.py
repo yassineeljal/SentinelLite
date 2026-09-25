@@ -67,8 +67,10 @@ def generate() -> str:
             end = start + timedelta(seconds=rng.randint(60, 2400))
             for command in rng.sample(COMMANDS, rng.randint(0, 3)):
                 when = start + (end - start) * rng.random()
-                emit(when, "sudo", f"{user} : TTY=pts/0 ; PWD=/home/{user} ; USER=root ; COMMAND={command}", with_pid=False)
+                # Real sudo format: the user name is right-aligned in a field of 8, TTY from a terminal.
+                emit(when, "sudo", f"{user:>8} : TTY=pts/0 ; PWD=/home/{user} ; USER=root ; COMMAND={command}", with_pid=False)
                 emit(when, "sudo", f"pam_unix(sudo:session): session opened for user root(uid=0) by {user}(uid=1001)", with_pid=False)
+                emit(when, "sudo", "pam_unix(sudo:session): session closed for user root", with_pid=False)
             emit(end, "sshd", f"Received disconnect from {ip} port {port}:11: disconnected by user")
             emit(end, "sshd", f"Disconnected from user {user} {ip} port {port}")
             emit(end, "sshd", f"pam_unix(sshd:session): session closed for user {user}")

@@ -34,6 +34,8 @@ select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
+# Real log lines are pasted verbatim: wrapping them would hide what the parser really sees.
+"tests/normalizers/test_linux_admin.py" = ["E501"]
 
 [tool.mypy]
 strict = true

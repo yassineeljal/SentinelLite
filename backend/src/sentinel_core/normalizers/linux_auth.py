@@ -1,19 +1,24 @@
-"""Normalizer for Linux /var/log/auth.log (sshd events)."""
+"""Normalizer for Linux /var/log/auth.log: sshd, and administrative events (linux_admin)."""
 
 import re
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, tzinfo
 from ipaddress import ip_address
 from typing import Any
 
+from sentinel_core.normalizers import linux_admin
 from sentinel_core.normalizers.base import ParseError, RawLog, make_event_id
+from sentinel_core.normalizers.parsed import Parsed
 from sentinel_core.schema.event import Action, Category, Event, Outcome, Source
 
 MAX_USER_LENGTH = 256
 SSH_PORT = 22
 
+# The process name may be parenthesised: systemd writes "(systemd):" and "(sd-pam):" for the user
+# managers it starts, which are well-formed lines, not malformed ones.
 _SYSLOG = re.compile(
     r"^(?P<ts>\d{4}-\d{2}-\d{2}T\S+|[A-Z][a-z]{2}\s+\d{1,2}\s\d{2}:\d{2}:\d{2})"
-    r"\s+(?P<host>\S+)\s+(?P<proc>[\w./-]+)(?:\[\d+\])?:\s+(?P<msg>.*)$"
+    r"\s+(?P<host>\S+)\s+(?P<proc>[\w./()-]+)(?:\[\d+\])?:\s+(?P<msg>.*)$"
 )
 
 # The username is attacker-controlled and may contain " from X port Y". The real source is
@@ -52,6 +57,51 @@ def _parse_timestamp(text: str, received_at: datetime, tz: tzinfo) -> datetime:
     return parsed
 
 
+def parse_sshd(message: str) -> Parsed | None:
+    if match := _FAILED.match(message):
+        action, outcome, severity = Action.LOGIN_FAILED, Outcome.FAILURE, 20
+        extra: dict[str, Any] = {
+            "method": match["method"],
+            "invalid_user": match["invalid"] is not None,
+        }
+    elif match := _ACCEPTED.match(message):
+        action, outcome, severity = Action.LOGIN_SUCCESS, Outcome.SUCCESS, 10
+        extra = {"method": match["method"]}
+    elif match := _INVALID.match(message):
+        action, outcome, severity = Action.INVALID_USER, Outcome.FAILURE, 25
+        extra = {}
+    else:
+        return None
+
+    src_ip = None
+    try:
+        src_ip = ip_address(match["ip"])
+    except ValueError:
+        extra["src_host"] = match["ip"][:255]  # never trust an unparsable address as an IP
+    if match["port"] is not None:
+        extra["src_port"] = int(match["port"])
+    return Parsed(
+        Category.AUTHENTICATION,
+        action,
+        outcome,
+        severity,
+        match["user"][:MAX_USER_LENGTH],
+        extra,
+        src_ip=src_ip,
+        dst_port=SSH_PORT,
+    )
+
+
+# One parser per syslog process name; every other process is well-formed noise (returns None).
+PARSERS: dict[str, Callable[[str], Parsed | None]] = {
+    "sshd": parse_sshd,
+    "sudo": linux_admin.parse_sudo,
+    "useradd": linux_admin.parse_useradd,
+    "usermod": linux_admin.parse_usermod,
+    "gpasswd": linux_admin.parse_gpasswd,
+}
+
+
 class LinuxAuthNormalizer:
     source = Source.LINUX_AUTH
 
@@ -63,32 +113,10 @@ class LinuxAuthNormalizer:
         framing = _SYSLOG.match(raw.line)
         if framing is None:
             raise ParseError("line does not match syslog framing")
-        if framing["proc"] != "sshd":
+        parser = PARSERS.get(framing["proc"])
+        parsed = parser(framing["msg"]) if parser else None
+        if parsed is None:
             return None
-
-        message = framing["msg"]
-        if match := _FAILED.match(message):
-            action, outcome, severity = Action.LOGIN_FAILED, Outcome.FAILURE, 20
-            extra: dict[str, Any] = {
-                "method": match["method"],
-                "invalid_user": match["invalid"] is not None,
-            }
-        elif match := _ACCEPTED.match(message):
-            action, outcome, severity = Action.LOGIN_SUCCESS, Outcome.SUCCESS, 10
-            extra = {"method": match["method"]}
-        elif match := _INVALID.match(message):
-            action, outcome, severity = Action.INVALID_USER, Outcome.FAILURE, 25
-            extra = {}
-        else:
-            return None
-
-        src_ip = None
-        try:
-            src_ip = ip_address(match["ip"])
-        except ValueError:
-            extra["src_host"] = match["ip"][:255]  # never trust an unparsable address as an IP
-        if match["port"] is not None:
-            extra["src_port"] = int(match["port"])
 
         return Event(
             event_id=make_event_id(raw),
@@ -97,13 +125,13 @@ class LinuxAuthNormalizer:
             agent_id=raw.agent_id,
             host=framing["host"],
             source=self.source,
-            category=Category.AUTHENTICATION,
-            action=action,
-            outcome=outcome,
-            severity=severity,
-            src_ip=src_ip,
-            dst_port=SSH_PORT,
-            user_name=match["user"][:MAX_USER_LENGTH],
+            category=parsed.category,
+            action=parsed.action,
+            outcome=parsed.outcome,
+            severity=parsed.severity,
+            src_ip=parsed.src_ip,
+            dst_port=parsed.dst_port,
+            user_name=parsed.user_name,
             raw=raw.line,
-            extra=extra,
+            extra=parsed.extra,
         )
