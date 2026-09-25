@@ -2,6 +2,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+import pytest
+from redis.exceptions import RedisError
+
 from sentinel_core.detection.alerts import Alert
 from sentinel_core.detection.engine import MAX_FUTURE_SKEW, DetectionEngine
 from sentinel_core.detection.rules import Rule
@@ -350,3 +353,67 @@ def test_the_future_skew_stays_below_the_late_tolerance() -> None:
     """Invariant behind the timestamp clamp: a forged date within the skew must not be able to
     evict events that are still within the out-of-order tolerance of any window."""
     assert MAX_FUTURE_SKEW.total_seconds() * 1000 < LATE_TOLERANCE_MS
+
+
+# --- One failing rule must not affect the others (code review) -------------------------------
+
+
+class _Boom(Exception):
+    pass
+
+
+def two_match_rules() -> tuple[Rule, Rule]:
+    return root_login_rule(id="rule-a"), root_login_rule(id="rule-b")
+
+
+def make_rule_b_raise(eng: DetectionEngine) -> None:
+    real = eng._match
+
+    async def failing(compiled: Any, event: Event, ts: datetime) -> Any:
+        if compiled.rule.id == "rule-b":
+            raise _Boom("bug in rule b")
+        return await real(compiled, event, ts)
+
+    eng._match = failing  # type: ignore[method-assign]
+
+
+async def test_a_failing_rule_does_not_discard_the_alerts_of_the_other_rules() -> None:
+    errors: list[tuple[str, str]] = []
+    eng = DetectionEngine(
+        list(two_match_rules()),
+        InMemoryWindowStore(),
+        on_rule_error=lambda rule, event, exc: errors.append((rule.id, type(exc).__name__)),
+    )
+    make_rule_b_raise(eng)
+
+    alerts = await eng.evaluate(make_event(1, action=Action.LOGIN_SUCCESS))
+
+    assert [a.rule_id for a in alerts] == ["rule-a"]  # rule A's alert survives rule B's bug
+    assert errors == [("rule-b", "_Boom")]
+
+
+async def test_without_an_error_handler_a_rule_failure_still_propagates() -> None:
+    eng = DetectionEngine(list(two_match_rules()), InMemoryWindowStore())
+    make_rule_b_raise(eng)
+
+    with pytest.raises(_Boom):
+        await eng.evaluate(make_event(1, action=Action.LOGIN_SUCCESS))
+
+
+async def test_infrastructure_errors_are_never_swallowed_by_the_error_handler() -> None:
+    """A Redis outage must make the whole batch be retried, not become a per-rule 'bug'."""
+    seen: list[str] = []
+    eng = DetectionEngine(
+        list(two_match_rules()),
+        InMemoryWindowStore(),
+        on_rule_error=lambda rule, event, exc: seen.append(rule.id),
+    )
+
+    async def redis_down(*args: Any, **kwargs: Any) -> Any:
+        raise RedisError("connection lost")
+
+    eng._match = redis_down  # type: ignore[method-assign]
+
+    with pytest.raises(RedisError):
+        await eng.evaluate(make_event(1, action=Action.LOGIN_SUCCESS))
+    assert seen == []

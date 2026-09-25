@@ -80,14 +80,14 @@ def _check_field(name: str) -> None:
 
 
 class ThresholdSpec(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid", populate_by_name=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     count: int = Field(ge=2)
     window_seconds: Duration = Field(alias="window", gt=0)
 
 
 class Rule(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid", populate_by_name=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,63}$")
     title: str = Field(min_length=1, max_length=200)

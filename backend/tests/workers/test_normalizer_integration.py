@@ -1,6 +1,7 @@
 """Integration tests: real Redis (stream + consumer group) and real Postgres (events)."""
 
 import asyncio
+import time
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -9,12 +10,12 @@ from uuid import UUID, uuid4
 import pytest
 from redis.asyncio import Redis
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import DataError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from sentinel_core.bus.raw_stream import RedisRawLogPublisher
 from sentinel_core.normalizers.base import RawLog
-from sentinel_core.schema.event import Source
+from sentinel_core.schema.event import Event, Source
 from sentinel_core.workers.normalizer import GROUP, NormalizerWorker
 from tests.support import DATABASE_URL, REDIS_URL
 
@@ -286,3 +287,102 @@ async def test_run_loop_processes_new_entries_and_stops_on_request(
     await asyncio.wait_for(task, timeout=5)
 
     assert len(await rows(engine, "SELECT 1 FROM events")) == 1
+
+
+async def test_an_entry_the_database_rejects_is_quarantined_and_does_not_block_the_batch(
+    redis: Redis,
+    sessions: async_sessionmaker[AsyncSession],
+    stream: str,
+    engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A deterministic storage error (e.g. data PostgreSQL refuses) would fail on every retry of
+    the batch and hold back every other line behind it: the offender must be isolated."""
+    worker = NormalizerWorker(redis, sessions, stream=stream, consumer="t", claim_idle_ms=0)
+    await worker.setup()
+    real_persist = worker._persist
+
+    async def picky(events: list[Event], letters: list[Any]) -> None:
+        if any(e.user_name == "poison" for e in events):
+            raise DataError("INSERT ...", {}, Exception("the database rejects this value"))
+        await real_persist(events, letters)
+
+    monkeypatch.setattr(worker, "_persist", picky)
+    await publish(
+        redis,
+        stream,
+        raw(failed(user="alice"), "1:0"),
+        raw(failed(user="poison"), "1:1"),
+        raw(failed(user="bob"), "1:2"),
+    )
+
+    handled = await worker.run_once()
+
+    assert handled == 3
+    users = await rows(engine, "SELECT user_name FROM events ORDER BY user_name")
+    assert [r.user_name for r in users] == ["alice", "bob"]  # the innocent lines went through
+    (letter,) = await rows(engine, "SELECT origin, error FROM events_dead_letter")
+    assert letter.origin == "1:1" and letter.error.startswith("unstorable entry")
+    assert await redis.xlen(stream) == 0 and await pending(redis, stream) == 0
+
+
+async def test_claimed_entries_are_not_held_back_by_a_blocking_read(
+    redis: Redis, sessions: async_sessionmaker[AsyncSession], stream: str, engine: AsyncEngine
+) -> None:
+    crashed = NormalizerWorker(redis, sessions, stream=stream, consumer="crashed", claim_idle_ms=0)
+    await crashed.setup()
+    await publish(redis, stream, raw(failed(), "1:0"))
+    await redis.xreadgroup(GROUP, "crashed", {stream: ">"}, count=10)  # read, never acknowledged
+    survivor = NormalizerWorker(
+        redis, sessions, stream=stream, consumer="survivor", claim_idle_ms=0
+    )
+
+    started = time.monotonic()
+    handled = await survivor.run_once(block_ms=3000)  # the stream is idle: nothing new to wait for
+
+    assert handled == 1
+    assert time.monotonic() - started < 1.5  # not the 3 s block of the read for new entries
+    assert len(await rows(engine, "SELECT 1 FROM events")) == 1
+
+
+async def test_stale_entries_are_drained_over_several_batches(
+    redis: Redis, sessions: async_sessionmaker[AsyncSession], stream: str, engine: AsyncEngine
+) -> None:
+    crashed = NormalizerWorker(redis, sessions, stream=stream, consumer="crashed", claim_idle_ms=0)
+    await crashed.setup()
+    await publish(redis, stream, *[raw(failed(user=f"u{i}"), f"1:{i}") for i in range(5)])
+    await redis.xreadgroup(GROUP, "crashed", {stream: ">"}, count=10)
+    survivor = NormalizerWorker(
+        redis, sessions, stream=stream, consumer="survivor", claim_idle_ms=0, batch_size=2
+    )
+
+    handled = [await survivor.run_once() for _ in range(3)]
+
+    assert handled == [2, 2, 1]
+    assert len(await rows(engine, "SELECT 1 FROM events")) == 5
+    assert await pending(redis, stream) == 0
+
+
+async def test_a_failing_partition_refresh_neither_crashes_the_worker_nor_is_retried_in_a_loop(
+    redis: Redis,
+    sessions: async_sessionmaker[AsyncSession],
+    stream: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    worker = NormalizerWorker(redis, sessions, stream=stream, consumer="t")
+    await worker.setup()
+    calls = 0
+
+    async def broken() -> None:
+        nonlocal calls
+        calls += 1
+        raise SQLAlchemyError("partition maintenance failed")
+
+    monkeypatch.setattr(worker, "ensure_partitions", broken)
+    worker._last_partition_check = time.monotonic() - 10_000  # the hourly refresh is due
+
+    with pytest.raises(SQLAlchemyError):
+        await worker.on_tick()
+    await worker.on_tick()  # not due again: the failed attempt counted, no hot retry loop
+
+    assert calls == 1

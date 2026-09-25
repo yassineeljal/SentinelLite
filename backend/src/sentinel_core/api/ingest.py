@@ -4,12 +4,13 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from sentinel_core.auth.agent_keys import AgentRepository, hash_secret, parse_bearer_token
 from sentinel_core.bus.raw_stream import BusFull, BusUnavailable, RawLogPublisher
 from sentinel_core.normalizers.base import MAX_LINE_LENGTH, RawLog
 from sentinel_core.schema.event import Source
+from sentinel_core.text import storable
 
 MAX_BATCH_LINES = 500
 RETRY_AFTER_SECONDS = 5
@@ -25,6 +26,13 @@ class IngestLine(BaseModel):
 
     origin: str = Field(min_length=1, max_length=128)
     line: str = Field(max_length=MAX_LINE_LENGTH)
+
+    @field_validator("origin", "line", mode="before")
+    @classmethod
+    def _neutralise(cls, value: object) -> object:
+        # NUL bytes and lone surrogates cannot be stored: neutralise them before the length
+        # check so the limit applies to what is queued (see text.py).
+        return storable(value) if isinstance(value, str) else value
 
 
 class IngestRequest(BaseModel):

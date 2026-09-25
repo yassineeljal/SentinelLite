@@ -193,3 +193,21 @@ async def test_oversized_chunked_body_is_rejected_without_content_length() -> No
 
     assert response.status_code == 413
     assert publisher.logs == []
+
+
+async def test_nul_bytes_in_a_line_are_accepted_and_neutralised_not_a_poison_pill(env: Env) -> None:
+    """Postgres cannot store NUL: raw, one such line would make its whole batch fail forever."""
+    body = {"source": "linux.auth", "lines": [{"origin": "1:0", "line": "user\u0000name"}]}
+
+    response = await env.post(body)
+
+    assert response.status_code == 202
+    assert env.publisher.logs[0].line == "user\\x00name"
+
+
+async def test_the_length_limit_applies_after_neutralising_nul_bytes(env: Env) -> None:
+    body = {"source": "linux.auth", "lines": [{"origin": "1:0", "line": "\u0000" * 4000}]}
+
+    response = await env.post(body)  # 4000 NULs are 16000 characters once escaped
+
+    assert response.status_code == 422

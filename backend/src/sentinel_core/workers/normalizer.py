@@ -11,14 +11,15 @@ detector, and the detector is idempotent.
 import asyncio
 import logging
 import os
-import signal
 import socket
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from time import monotonic
 
 from pydantic import ValidationError
 from redis.asyncio import Redis
+from sqlalchemy.exc import DataError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from sentinel_core.bus.normalized_stream import RedisNormalizedPublisher
@@ -27,10 +28,16 @@ from sentinel_core.config import get_settings
 from sentinel_core.db.events import ensure_event_partitions, insert_dead_letters, insert_events
 from sentinel_core.db.session import create_engine, create_sessionmaker
 from sentinel_core.normalizers.base import ParseError, RawLog, make_event_id
-from sentinel_core.normalizers.dead_letter import DeadLetterRecord
+from sentinel_core.normalizers.dead_letter import DeadLetterRecord, make_dead_letter
 from sentinel_core.normalizers.registry import NORMALIZERS
 from sentinel_core.schema.event import Event
-from sentinel_core.workers.consumer import BLOCK_MS, Entry, StreamConsumer, build_redis
+from sentinel_core.workers.consumer import (
+    BLOCK_MS,
+    Entry,
+    StreamConsumer,
+    build_redis,
+    install_stop_signals,
+)
 
 logger = logging.getLogger("sentinel.normalizer")
 
@@ -38,9 +45,6 @@ GROUP = "normalizers"
 PARTITIONS_BEHIND = 1  # days before today
 PARTITIONS_AHEAD = 7  # days after today
 PARTITION_REFRESH_SECONDS = 3600
-MAX_ERROR_LENGTH = 500
-MAX_RAW_LENGTH = 16_384
-
 __all__ = [
     "BLOCK_MS",
     "GROUP",
@@ -56,12 +60,13 @@ def _dead_letter(data: str, error: str, raw_log: RawLog | None = None) -> DeadLe
     # Same identity as the event id: a batch retried by the agent gets a new received_at (so a
     # different payload) but must not create a second dead letter. Undecodable entries have no
     # identity, so their payload is all we can hash.
-    dedup_key = make_event_id(raw_log) if raw_log else sha256(data.encode()).hexdigest()
-    return DeadLetterRecord(
+    dedup_key = (
+        make_event_id(raw_log) if raw_log else sha256(data.encode(errors="replace")).hexdigest()
+    )
+    return make_dead_letter(
         dedup_key=dedup_key,
-        # Bounded: the payload is untrusted, the dead-letter table must not be a sink for it.
-        raw=(raw_log.line if raw_log else data)[:MAX_RAW_LENGTH],
-        error=error[:MAX_ERROR_LENGTH],
+        raw=raw_log.line if raw_log else data,
+        error=error,
         agent_id=raw_log.agent_id if raw_log else None,
         source=raw_log.source.value if raw_log else None,
         origin=raw_log.origin if raw_log else None,
@@ -132,8 +137,10 @@ class NormalizerWorker(StreamConsumer):
 
     async def on_tick(self) -> None:
         if monotonic() - self._last_partition_check > PARTITION_REFRESH_SECONDS:
-            await self.ensure_partitions()
+            # Counted before the attempt: a failing refresh is retried at the next interval, not
+            # on every loop iteration (which would also slow down normalization).
             self._last_partition_check = monotonic()
+            await self.ensure_partitions()
 
     async def ready(self) -> bool:
         # Stop reading raw lines while the detector is behind: the backlog stays in
@@ -164,6 +171,18 @@ class NormalizerWorker(StreamConsumer):
             len(entries) - len(events) - len(letters),
         )
 
+    async def quarantine(self, entry: Entry, exc: DataError) -> None:
+        _, fields = entry
+        data = (fields or {}).get(DATA_FIELD) or repr(fields)
+        try:  # keep the context (agent, origin) when the entry is decodable
+            raw_log: RawLog | None = RawLog.model_validate_json(data)
+        except ValidationError:
+            raw_log = None
+        letter = _dead_letter(data, f"unstorable entry: {type(exc).__name__}", raw_log)
+        # ASCII-only payload: recording the failure must not fail for the same reason.
+        letter = replace(letter, raw=letter.raw.encode("unicode_escape").decode("ascii"))
+        await self._persist([], [letter])
+
     async def _persist(self, events: list[Event], letters: list[DeadLetterRecord]) -> None:
         async with self._sessions.begin() as session:
             await insert_events(session, events)
@@ -185,9 +204,7 @@ async def amain() -> None:
         ),
     )
     stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for signum in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(signum, stop.set)
+    install_stop_signals(stop)
     try:
         await worker.run(stop)
     finally:

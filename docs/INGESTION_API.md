@@ -37,8 +37,8 @@ Authorization: Bearer <agent_uuid>.<secret>
 |---|---|
 | `source` | One of `linux.auth`, `nginx.access`, `windows.security`, `windows.sysmon` |
 | `lines` | 1 to 500 items |
-| `lines[].origin` | 1–128 chars. Stable position of the line in its source (e.g. `<inode>:<byte offset>`). Together with the agent and source it forms the idempotency key, so **re-sending a batch after a failure never creates duplicates** |
-| `lines[].line` | Up to 8192 chars, the raw line, unmodified |
+| `lines[].origin` | 1–128 chars. Stable position of the line in its source (e.g. `<inode>:<byte offset>`). Together with the agent, the source **and the content of the line** it forms the idempotency key, so **re-sending a batch after a failure never creates duplicates**, while different lines that reuse an origin (an inode reused after a log rotation) stay different events |
+| `lines[].line` | Up to 8192 chars, the raw line. NUL bytes and lone UTF-16 surrogates are replaced by visible escapes (`\x00`, `\ud800`) because PostgreSQL cannot store them: raw, one such line would make its whole batch fail on every retry. The length limit applies to the escaped form |
 
 The server adds `received_at` (its own clock, never trusted from the agent). Timestamps inside the
 line are interpreted by the normalizer, not by the API.

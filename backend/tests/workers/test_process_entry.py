@@ -154,3 +154,11 @@ def test_redis_client_timeout_outlasts_the_blocking_read() -> None:
 
     timeout = client.connection_pool.connection_kwargs["socket_timeout"]
     assert timeout > BLOCK_MS / 1000
+
+
+def test_dead_letters_never_carry_characters_the_database_rejects() -> None:
+    result = process_entry("not json \x00 with a NUL and a lone \ud800 surrogate")
+
+    assert isinstance(result, DeadLetterRecord)
+    assert "\x00" not in result.raw and "\x00" not in result.error
+    result.raw.encode("utf-8")  # must not raise

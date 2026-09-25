@@ -10,6 +10,7 @@ from sentinel_core.api import ingest
 from sentinel_core.api.body_limit import BodySizeLimitMiddleware
 from sentinel_core.auth.agent_keys import AgentRepository, DenyAllAgentRepository
 from sentinel_core.auth.registry import PostgresAgentRepository
+from sentinel_core.bus.client import API_SOCKET_TIMEOUT_SECONDS, build_redis
 from sentinel_core.bus.raw_stream import RawLogPublisher, RedisRawLogPublisher
 from sentinel_core.config import Settings, get_settings
 from sentinel_core.db.session import create_engine, create_sessionmaker
@@ -36,7 +37,7 @@ def create_app(
             engine = create_engine(settings)
             app.state.agents = PostgresAgentRepository(create_sessionmaker(engine))
         if publisher is None:
-            client = Redis.from_url(settings.redis_url, decode_responses=True)
+            client = build_redis(settings.redis_url, API_SOCKET_TIMEOUT_SECONDS)
             app.state.publisher = RedisRawLogPublisher(
                 client, high_watermark=settings.raw_stream_high_watermark
             )
