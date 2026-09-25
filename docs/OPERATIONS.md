@@ -54,9 +54,17 @@ Behaviour worth knowing:
 - **Crash or database outage**: entries stay pending and are redelivered (after
   `SENTINEL_NORMALIZER_CLAIM_IDLE_MS`, 60 s by default, for entries owned by a dead worker). Inserts are
   idempotent, so redelivery never duplicates rows.
+- **Entries the database rejects** (deterministic storage errors): the batch is retried entry by
+  entry and the offender is recorded in `events_dead_letter` (`unstorable entry`, payload
+  ASCII-escaped) instead of blocking the entries around it. NUL bytes and lone surrogates are
+  already neutralised at the API, so this is a safety net.
 - **Partitions**: created at startup and refreshed hourly for yesterday..today+7. An event with a
   date outside that range (agents control the timestamps in their lines) lands in `events_default`.
-  Retention (dropping old partitions) is not automated yet.
+  When that day later enters the window, its partition is created and the rows of the default
+  partition that belong to it are moved in (PostgreSQL refuses to create a partition over a range
+  that the default already holds rows of). A day that cannot be created is logged and skipped; the
+  others still are, and the worker keeps running. A failed refresh is retried at the next interval,
+  not on every loop. Retention (dropping old partitions) is not automated yet.
 
 ## Database migrations
 

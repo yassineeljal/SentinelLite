@@ -210,3 +210,17 @@ def test_scope_defaults_to_agent_and_accepts_global() -> None:
 def test_scope_rejects_unknown_values() -> None:
     with pytest.raises(RuleLoadError):
         parse_rule_yaml(THRESHOLD_RULE + "scope: everyone\n")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        THRESHOLD_RULE.replace("window: 60s", "window_seconds: 60s"),
+        THRESHOLD_RULE.replace("cooldown: 300s", "cooldown_seconds: 300s"),
+    ],
+)
+def test_internal_field_names_are_not_accepted_as_keys(text: str) -> None:
+    """Only the documented keys exist: an alias-only rule would silently skip the default
+    cooldown and raise one alert per extra event."""
+    with pytest.raises(RuleLoadError):
+        parse_rule_yaml(text)

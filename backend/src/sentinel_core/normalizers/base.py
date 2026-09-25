@@ -2,9 +2,10 @@ from hashlib import sha256
 from typing import Protocol
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
 from sentinel_core.schema.event import Event, Source
+from sentinel_core.text import storable
 
 MAX_LINE_LENGTH = 8192
 
@@ -22,6 +23,12 @@ class RawLog(BaseModel):
     )
     line: str = Field(max_length=MAX_LINE_LENGTH)
     received_at: AwareDatetime
+
+    @field_validator("origin", "line", mode="before")
+    @classmethod
+    def _neutralise(cls, value: object) -> object:
+        # Before the length check, so that the limit applies to the form that is stored.
+        return storable(value) if isinstance(value, str) else value
 
 
 class ParseError(ValueError):
@@ -41,5 +48,10 @@ class Normalizer(Protocol):
 
 
 def make_event_id(raw: RawLog) -> str:
-    """Deterministic id: replaying the same line from the same place yields the same id."""
-    return sha256(f"{raw.agent_id}|{raw.source}|{raw.origin}".encode()).hexdigest()
+    """Deterministic id: replaying the same line from the same place yields the same id.
+
+    The content is part of it: after a log rotation an inode can be reused and offsets repeat,
+    so one origin can designate different lines, which must stay different events.
+    """
+    content = sha256(raw.line.encode()).hexdigest()
+    return sha256(f"{raw.agent_id}|{raw.source}|{raw.origin}|{content}".encode()).hexdigest()

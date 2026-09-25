@@ -135,6 +135,16 @@ for the final report.
   are deterministic (rule + group + triggering event), inserts ignore
   duplicates, and the event that raised an alert is allowed to raise it again during the cooldown.
   Every other event of the cooldown stays suppressed. Tested with a real crash simulation.
+- **Alerts are persisted as soon as their event is evaluated**, not at the end of the batch. Later
+  events of the same batch advance the windows; if the batch were persisted only at its end, a
+  crash would redeliver it, an earlier alert could no longer be raised again (its window has moved
+  on) and would be lost. Persisting per event leaves at most the event in flight unpersisted, and
+  that one re-raises. Tested with a batch holding three alerts ten minutes apart and a crash
+  after the second.
+- **One failing rule does not affect the others.** If a rule raises on an event, the failure is
+  recorded (dead letter `detection error in rule <id>`) and the other rules still run, so alerts
+  already produced for that event are kept. Infrastructure (Redis) errors always propagate: the
+  batch is retried.
 - **Failure handling.** A Redis/Postgres error leaves the batch pending and it is retried. A bug in
   one rule (exception while evaluating an event) is contained: that event is recorded in
   `events_dead_letter` with `source = events.normalized`, the rest of the batch proceeds.

@@ -10,14 +10,15 @@ and persisting never loses an alert nor duplicates one.
 import asyncio
 import logging
 import os
-import signal
 import socket
 import sys
+from dataclasses import replace
 from hashlib import sha256
 
 from pydantic import ValidationError
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
+from sqlalchemy.exc import DataError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from sentinel_core.bus.normalized_stream import NORMALIZED_STREAM
@@ -27,19 +28,22 @@ from sentinel_core.db.alerts import insert_alerts
 from sentinel_core.db.events import insert_dead_letters
 from sentinel_core.db.session import create_engine, create_sessionmaker
 from sentinel_core.detection.alerts import Alert
-from sentinel_core.detection.engine import DetectionEngine
-from sentinel_core.detection.rules import RuleLoadError, load_rules
+from sentinel_core.detection.engine import DetectionEngine, RuleErrorHandler
+from sentinel_core.detection.rules import Rule, RuleLoadError, load_rules
 from sentinel_core.detection.store import RedisWindowStore
-from sentinel_core.normalizers.dead_letter import DeadLetterRecord
+from sentinel_core.normalizers.dead_letter import DeadLetterRecord, make_dead_letter
 from sentinel_core.schema.event import Event
-from sentinel_core.workers.consumer import Entry, StreamConsumer, build_redis
+from sentinel_core.workers.consumer import (
+    Entry,
+    StreamConsumer,
+    build_redis,
+    install_stop_signals,
+)
 
 logger = logging.getLogger("sentinel.detector")
 
 GROUP = "detectors"
 STAGE = "events.normalized"  # recorded as the `source` of this worker's dead letters
-MAX_ERROR_LENGTH = 500
-MAX_RAW_LENGTH = 16_384
 
 
 class DetectorWorker(StreamConsumer):
@@ -68,8 +72,8 @@ class DetectorWorker(StreamConsumer):
         self._engine = engine
 
     async def process_batch(self, entries: list[Entry]) -> None:
-        alerts: list[Alert] = []
         letters: list[DeadLetterRecord] = []
+        raised = 0
         for _, fields in entries:
             if fields is None:  # entry deleted while still pending: nothing left to process
                 continue
@@ -81,12 +85,15 @@ class DetectorWorker(StreamConsumer):
                     _letter(data, f"undecodable normalized event: {exc.error_count()} error(s)")
                 )
                 continue
+
             try:
-                alerts.extend(await self._engine.evaluate(event))
+                alerts = await self._engine.evaluate(
+                    event, on_rule_error=_rule_failed(data, letters)
+                )
             except RedisError:
                 raise  # infrastructure problem: leave the batch pending and retry
-            except Exception as exc:  # a bug in one rule must not wedge the whole stream
-                logger.exception("rule evaluation failed for event %s", event.event_id)
+            except Exception as exc:  # defensive: the engine already isolates rule failures
+                logger.exception("evaluation failed for event %s", event.event_id)
                 letters.append(
                     _letter(
                         data,
@@ -95,23 +102,42 @@ class DetectorWorker(StreamConsumer):
                         raw=event.raw,
                     )
                 )
+                continue
 
-        await self._persist(alerts, letters)
-        for alert in alerts:
-            logger.info(
-                "ALERT %s severity=%d group=%s count=%d id=%s",
-                alert.rule_id,
-                alert.severity,
-                alert.group,
-                alert.match_count,
-                alert.alert_id[:12],
-            )
+            if alerts:
+                # Persist NOW, before evaluating the next event. The detection state has already
+                # moved on for this event; if the batch were persisted only at its end, a crash
+                # would redeliver it, later events would have advanced the windows past this one,
+                # and its alert could not be raised again. Persisting per event leaves at most
+                # the event in flight unpersisted, and that one may re-raise its alert.
+                await self._persist(alerts, [])
+                raised += len(alerts)
+                for alert in alerts:
+                    logger.info(
+                        "ALERT %s severity=%d group=%s count=%d id=%s",
+                        alert.rule_id,
+                        alert.severity,
+                        alert.group,
+                        alert.match_count,
+                        alert.alert_id[:12],
+                    )
+
+        if letters:
+            await self._persist([], letters)
         logger.info(
             "batch: %d events evaluated -> %d alerts, %d dead letters",
             len(entries),
-            len(alerts),
+            raised,
             len(letters),
         )
+
+    async def quarantine(self, entry: Entry, exc: DataError) -> None:
+        _, fields = entry
+        data = (fields or {}).get(DATA_FIELD) or repr(fields)
+        letter = _letter(data, f"unstorable entry: {type(exc).__name__}")
+        # ASCII-only payload: recording the failure must not fail for the same reason.
+        letter = replace(letter, raw=letter.raw.encode("unicode_escape").decode("ascii"))
+        await self._persist([], [letter])
 
     async def _persist(self, alerts: list[Alert], letters: list[DeadLetterRecord]) -> None:
         async with self._sessions.begin() as session:
@@ -119,13 +145,34 @@ class DetectorWorker(StreamConsumer):
             await insert_dead_letters(session, letters)
 
 
+def _rule_failed(data: str, letters: list[DeadLetterRecord]) -> RuleErrorHandler:
+    """Handler that records a failing rule as a dead letter, bound to this entry."""
+
+    def handler(rule: Rule, event: Event, exc: Exception) -> None:
+        logger.error("rule %s failed on event %s: %r", rule.id, event.event_id, exc)
+        letters.append(
+            _letter(
+                data,
+                f"detection error in rule {rule.id}: {type(exc).__name__}: {exc}",
+                dedup=_digest(event.event_id, rule.id),
+                raw=event.raw,
+            )
+        )
+
+    return handler
+
+
+def _digest(*parts: str) -> str:
+    return sha256("|".join(parts).encode()).hexdigest()
+
+
 def _letter(
     data: str, error: str, *, dedup: str | None = None, raw: str | None = None
 ) -> DeadLetterRecord:
-    return DeadLetterRecord(
-        dedup_key=dedup or sha256(data.encode()).hexdigest(),
-        raw=(raw if raw is not None else data)[:MAX_RAW_LENGTH],  # untrusted: bounded
-        error=error[:MAX_ERROR_LENGTH],
+    return make_dead_letter(
+        dedup_key=dedup or sha256(data.encode(errors="replace")).hexdigest(),
+        raw=raw if raw is not None else data,
+        error=error,
         source=STAGE,
     )
 
@@ -156,9 +203,7 @@ async def amain() -> int:
         claim_idle_ms=settings.detector_claim_idle_ms,
     )
     stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for signum in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(signum, stop.set)
+    install_stop_signals(stop)
     try:
         await worker.run(stop)
     finally:

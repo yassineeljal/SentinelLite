@@ -13,6 +13,34 @@ Entry template:
 
 ---
 
+## 2026-09-25 — Robustness fixes from the full M1 code review (PR #10)
+
+**Context** — `/code-review high backend/src/sentinel_core` was the first review that actually read the whole M1 code (the two earlier runs had been scoped to the README and to one commit). It reported ten findings; eight were real and are fixed here, one is declined, one is deferred.
+
+**Fixed**
+1. **Poison line (high).** A NUL byte (or a lone UTF-16 surrogate) in a log line made the Postgres insert fail on every retry: the batch was never acknowledged and one authenticated agent could stop every other agent's lines from being normalized. Now: neutralised at the API and in `RawLog` (`text.storable`, before the length check), dead letters are built through `make_dead_letter` so that recording a failure cannot itself fail, and the consumer base class has a safety net — a `DataError` makes the batch be retried entry by entry and the offender is quarantined as a dead letter instead of blocking the others.
+2. **Partition creation (high).** An event dated far ahead sits in `events_default`; when its day entered the rolling window, `CREATE TABLE … PARTITION OF` failed ("default partition would be violated"), crashing the normalizer at every startup. Now the rows of that day are moved from the default into the new partition (create, move, attach), each day runs in a savepoint so one failure does not stop the others, and a failed hourly refresh is retried at the next interval instead of on every loop.
+3. **Lost alerts in a long batch (found while triaging finding 4).** With alerts persisted at the end of the batch, a crash redelivered it, later events had advanced the windows past the first alert and it could no longer be raised again. The detector now persists the alerts of an event before evaluating the next one; the "trigger re-raises" mechanism then only has to cover the event in flight.
+4. **One failing rule discarded the other rules' alerts.** `DetectionEngine.evaluate` now isolates each rule (error handler, Redis errors still propagate), so alerts already produced for the event survive.
+5. **Rule keys.** `populate_by_name` allowed `window_seconds` / `cooldown_seconds`, which silently skipped the default cooldown. Only the documented keys exist now.
+6. **Event identity.** `event_id` now includes a hash of the line content: after log rotation an inode can be reused and offsets repeat, so one origin could designate different lines that collapsed into one event (and one dead letter).
+7. **Consumer.** Entries taken over from a crashed worker no longer wait for the 5 s blocking read of new entries, and the `XAUTOCLAIM` cursor is now honoured.
+8. **API Redis client** had no socket timeouts (a stalled Redis would hang ingest requests instead of answering 503); the duplicated dead-letter/stop-signal code of the two workers is shared.
+
+**Declined** — clamping timestamps in the normalizer instead of the engine: the primary key of `events` contains `ts`, so rewriting it with the (per-retry) receipt time would break idempotency for retried lines. The partition problem is fixed at its source instead (item 2).
+**Deferred** — the request body is read and parsed before the agent is authenticated (up to 8 MiB per unauthenticated request): resource exhaustion only, tracked for the hardening pass.
+
+**How verified** — every fix has a test that failed first. Mutation checks (each reverted afterwards): persisting at the end of the batch fails the mid-batch crash test; removing the `DataError` isolation fails the quarantine test; blocking reads even with claimed entries fails the latency test; creating partitions without moving the default rows fails both partition tests. 246 tests with real Redis and Postgres (183 pass without them); `ruff`, `mypy --strict` clean. Real stack: a batch with a NUL byte and a lone surrogate among normal lines was accepted (202), all four events were stored (`ro\x00ot`, `bob\ud800`), both streams were empty, no worker errors.
+
+**Problems & lessons**
+- Triage of finding 4 revealed a larger flaw than the one reported (any batch spanning more than window + tolerance), which a simpler change (persist per event) fixes better than the reviewer's suggested cooldown history.
+- Two older tests replaced `engine.evaluate` with a one-argument fake; changing the signature broke them. Test doubles that mirror a signature need to follow it.
+- Poison-data handling is a class of bug, not a single bug: every place where attacker text reaches the database (raw line, event fields, dead letters, error messages) had to be considered, and the last line of defence is the quarantine.
+
+**Not done** — TLS agent↔API, `/docs` exposure, pinning of images and actions, authentication before body parsing.
+
+---
+
 ## 2026-09-25 — Follow-ups of the code review of the hardening commit (PR #9)
 
 **What** — `/code-review high` on the hardening commit reported seven findings; three were real defects in my change and are fixed, one is an accepted trade-off, two are documented, one is declined with a reason.

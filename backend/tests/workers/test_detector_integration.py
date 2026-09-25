@@ -239,12 +239,12 @@ async def test_a_bug_in_the_engine_is_contained_as_a_dead_letter(
     real = pipeline.detector._engine.evaluate
     calls = 0
 
-    async def flaky(event: Event) -> Any:
+    async def flaky(event: Event, **kwargs: Any) -> Any:
         nonlocal calls
         calls += 1
         if calls == 2:
             raise RuntimeError("bug in a rule")
-        return await real(event)
+        return await real(event, **kwargs)
 
     monkeypatch.setattr(pipeline.detector._engine, "evaluate", flaky)
 
@@ -264,7 +264,7 @@ async def test_an_infrastructure_error_is_retried_not_dead_lettered(
     while await pipeline.normalizer.run_once():
         pass
 
-    async def redis_down(event: Event) -> Any:
+    async def redis_down(event: Event, **kwargs: Any) -> Any:
         raise RedisError("connection lost")
 
     with monkeypatch.context() as patch:
@@ -321,3 +321,36 @@ async def test_the_normalizer_stops_reading_while_the_detector_is_behind(
     assert await normalizer.run_once() == 2  # ...and the normalizer resumes
 
     await redis.delete(raw_stream, normalized_stream)
+
+
+async def test_a_crash_in_the_middle_of_a_long_batch_loses_none_of_the_earlier_alerts(
+    pipeline: Pipeline, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The brute-force attack scenario holds three alerts 10 minutes apart. When one batch spans
+    more than window + tolerance, later events advance the detection state: an alert that was
+    not persisted yet could no longer be raised again after redelivery. Alerts must therefore be
+    persisted as soon as their event is evaluated, not at the end of the batch."""
+    expected, lines = read_scenario("ssh-bruteforce", "attack")
+    await pipeline.send(*[raw(line, f"attack:{i}") for i, line in enumerate(lines)])
+    while await pipeline.normalizer.run_once():
+        pass
+    real_persist = pipeline.detector._persist
+    calls = 0
+
+    async def crash_on_the_third_alert(alerts: Any, letters: Any) -> None:
+        nonlocal calls
+        if alerts:
+            calls += 1
+            if calls == 3:
+                raise SQLAlchemyError("database went away mid-batch")
+        await real_persist(alerts, letters)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(pipeline.detector, "_persist", crash_on_the_third_alert)
+        with pytest.raises(SQLAlchemyError):
+            await pipeline.detector.run_once()
+
+    await pipeline.detector.run_once()  # redelivery of the whole batch
+
+    ids = [r.alert_id for r in await pipeline.rows("SELECT alert_id FROM alerts")]
+    assert len(ids) == expected and len(set(ids)) == expected

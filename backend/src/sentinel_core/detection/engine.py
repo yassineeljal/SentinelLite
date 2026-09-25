@@ -1,10 +1,12 @@
 """Detection engine: applies rules to normalized events and yields alerts."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from hashlib import sha256
 from typing import Any
+
+from redis.exceptions import RedisError
 
 from sentinel_core.detection.alerts import Alert
 from sentinel_core.detection.rules import Rule
@@ -19,6 +21,9 @@ from sentinel_core.schema.event import Event
 # runs ahead by more than this is simply dated by the server.
 MAX_FUTURE_SKEW = timedelta(seconds=5)
 MAX_GROUP_VALUE_LENGTH = 256
+
+# Called with (rule, event, exception) when ONE rule fails on an event.
+RuleErrorHandler = Callable[[Rule, Event, Exception], None]
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _MS = timedelta(milliseconds=1)
 
@@ -76,21 +81,45 @@ def _group_digest(rule: Rule, event: Event, group: list[str]) -> str:
 
 
 class DetectionEngine:
-    def __init__(self, rules: Sequence[Rule], store: WindowStore) -> None:
+    def __init__(
+        self,
+        rules: Sequence[Rule],
+        store: WindowStore,
+        on_rule_error: RuleErrorHandler | None = None,
+    ) -> None:
         self._rules = [_CompiledRule(rule) for rule in rules if rule.enabled]
         self._store = store
+        self._on_rule_error = on_rule_error
 
-    async def evaluate(self, event: Event) -> list[Alert]:
+    async def evaluate(
+        self, event: Event, on_rule_error: RuleErrorHandler | None = None
+    ) -> list[Alert]:
+        """Alerts raised by `event`.
+
+        A rule that fails does not affect the others: when an error handler is given (here or at
+        construction) the failure is reported to it and the remaining rules still run, so the
+        alerts already produced for this event are not lost. Without a handler the exception
+        propagates. Infrastructure errors (Redis) always propagate: the caller must retry.
+        """
+        handler = on_rule_error or self._on_rule_error
         ts = self._effective_ts(event)
         alerts: list[Alert] = []
         for compiled in self._rules:
             if not compiled.matches(event):
                 continue
-            alert = (
-                await self._threshold(compiled, event, ts)
-                if compiled.rule.type == "threshold"
-                else await self._match(compiled, event, ts)
-            )
+            try:
+                alert = (
+                    await self._threshold(compiled, event, ts)
+                    if compiled.rule.type == "threshold"
+                    else await self._match(compiled, event, ts)
+                )
+            except RedisError:
+                raise
+            except Exception as exc:
+                if handler is None:
+                    raise
+                handler(compiled.rule, event, exc)
+                continue
             if alert is not None:
                 alerts.append(alert)
         return alerts

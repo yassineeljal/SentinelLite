@@ -38,3 +38,15 @@ def test_database_url_has_no_default(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(ValueError):
         Settings(_env_file=None)
+
+
+def test_the_api_redis_client_has_socket_timeouts() -> None:
+    """Without them a stalled Redis would hang every ingest request instead of answering 503."""
+    from sentinel_core.bus.client import API_SOCKET_TIMEOUT_SECONDS, build_redis
+
+    kwargs = build_redis(
+        "redis://localhost:6379/0", API_SOCKET_TIMEOUT_SECONDS
+    ).connection_pool.connection_kwargs
+
+    assert 0 < kwargs["socket_timeout"] <= 10
+    assert 0 < kwargs["socket_connect_timeout"] <= 10
