@@ -31,6 +31,30 @@ docker compose exec api sentinel agents revoke <agent_id>
 
 See [`INGESTION_API.md`](INGESTION_API.md) for the agent-facing contract.
 
+## Linux agent
+
+The agent (`agents/linux/`, see [`AGENT.md`](AGENT.md)) runs on the monitored hosts. To try it against
+the local stack without a VM:
+
+```bash
+docker compose exec api sentinel agents create --name demo --os linux    # prints the key once
+mkdir -p /tmp/demo && printf '%s' '<key>' > /tmp/demo/key && chmod 600 /tmp/demo/key
+cat > /tmp/demo/agent.toml <<'EOT'
+[server]
+url = "http://127.0.0.1:8000"
+key_file = "/tmp/demo/key"
+[agent]
+state_file = "/tmp/demo/state.json"
+[[sources]]
+path = "/tmp/demo/auth.log"
+source = "linux.auth"
+EOT
+: > /tmp/demo/auth.log
+cd agents/linux && uv run sentinel-agent --config /tmp/demo/agent.toml &
+# append six failed logins (ISO timestamps, like rsyslog on Ubuntu 24.04) and read the alert
+docker compose exec api sentinel alerts list
+```
+
 ## Normalizer worker
 
 The `normalizer` service consumes `events.raw`, normalizes each line and writes `events` (daily
@@ -143,7 +167,7 @@ of the store contract tests runs when `SENTINEL_TEST_REDIS_URL` is set. See
 | `docker: command not found` | `export PATH="$HOME/.orbstack/bin:$PATH"` |
 | API container restarts with `ModuleNotFoundError` | Image built with an editable install; the Dockerfile must use `uv sync --no-editable` |
 | `POSTGRES_PASSWORD` error on `docker compose` | `deploy/.env` is missing: copy it from `.env.example` |
-| Ingestion answers `401` for a valid key | The agent was revoked, or the key was created against another database |
+| Ingestion answers `401` for a valid key | The agent was revoked, or the key was created against another database. The Linux agent then exits with code 2 and keeps the refused lines unacknowledged |
 | Ingestion answers `429` | `events.raw` is above its high watermark: the `normalizer` service is down or stuck (check `docker compose ps` / `logs normalizer`, and `redis-cli xpending events.raw normalizers`) |
 | Attack sent but no alert | `docker compose logs detector` (did it start? rules loaded?); is the group's state ahead in time (old-dated replay, see DETECTION.md)? did the line normalize (`events_dead_letter`)? |
 | `detector` exits at startup | Invalid or empty rule set: the log lists every faulty file. Fix `rules/` and restart |

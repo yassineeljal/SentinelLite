@@ -1,0 +1,44 @@
+# SentinelLite Linux agent. Install: see docs/AGENT.md.
+# NOT yet validated on a real host (no lab VM at the time of writing): treat the hardening
+# options as a starting point and check `systemd-analyze security sentinel-agent`.
+[Unit]
+Description=SentinelLite log agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sentinel-agent
+Group=sentinel-agent
+# Read access to /var/log/auth.log (owner syslog, group adm on Ubuntu)
+SupplementaryGroups=adm
+ExecStart=/opt/sentinel-agent/bin/sentinel-agent --config /etc/sentinel-agent/agent.toml
+Restart=on-failure
+RestartSec=5
+# Exit codes 1 (bad configuration), 2 (key refused) and 3 (log refused) need a human:
+# do not restart-loop on them.
+RestartPreventExitStatus=1 2 3
+
+# Runtime state (read positions): /var/lib/sentinel-agent
+StateDirectory=sentinel-agent
+StateDirectoryMode=0700
+UMask=0077
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+CapabilityBoundingSet=
+SystemCallFilter=@system-service
+
+[Install]
+WantedBy=multi-user.target

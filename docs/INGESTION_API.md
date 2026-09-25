@@ -73,6 +73,8 @@ transaction. The normalizer worker consumes the stream through the consumer grou
 deletes each entry after acknowledging it (otherwise the stream length would eventually reach the
 watermark and the API would answer `429`).
 
+The reference client is the Linux agent ([`AGENT.md`](AGENT.md)): it implements the table above (backoff on `503`, `Retry-After` on `429`, batch bisection on `413`/`422`, exit on `401`).
+
 ## Managing agents
 
 Agents live in the Postgres `agents` table (`id`, `name`, `os`, `key_hash`, `created_at`,
