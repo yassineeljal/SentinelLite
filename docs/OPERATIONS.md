@@ -33,6 +33,8 @@ See [`INGESTION_API.md`](INGESTION_API.md) for the agent-facing contract.
 
 ## Linux agent
 
+For a realistic setup (target machine, attacker, real `sshd` and `hydra`) see [`lab/README.md`](../lab/README.md).
+
 The agent (`agents/linux/`, see [`AGENT.md`](AGENT.md)) runs on the monitored hosts. To try it against
 the local stack without a VM:
 

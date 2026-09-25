@@ -69,8 +69,13 @@ journalctl -u sentinel-agent -f
 ```
 
 > The systemd unit (hardened: `NoNewPrivileges`, `ProtectSystem=strict`, restricted address families,
-> empty capability set…) has **not yet been validated on a real host**: it will be exercised in the lab
-> (M1 end-to-end test). Check it with `systemd-analyze security sentinel-agent`.
+> empty capability set…) was validated on **Ubuntu 24.04.5 arm64** on 2026-09-25: it starts, reads
+> `/var/log/auth.log` through the `adm` group and ships to the API; `systemd-analyze security
+> sentinel-agent` reports an exposure level of **4.2 (OK)**. Other distributions are untested.
+>
+> **Shortcut:** `lab/scripts/deploy-agent.sh` does all of the above from the platform host over SSH
+> (build the wheel, register the agent, copy the key to a private file, install, start), see
+> [`lab/README.md`](../lab/README.md).
 
 ## Run by hand
 
@@ -117,4 +122,4 @@ never logged and is hidden from `repr()`.
 - No response channel yet: the agent does not fetch or execute actions (blocking an IP is planned
   for M5, by *pull*, so that no port is opened on the host).
 - No TLS client certificates, no proxy support.
-- The systemd unit is unvalidated on a real host.
+- The systemd unit is validated on Ubuntu 24.04 only.

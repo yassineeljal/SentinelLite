@@ -1,6 +1,7 @@
 # SentinelLite Linux agent. Install: see docs/AGENT.md.
-# NOT yet validated on a real host (no lab VM at the time of writing): treat the hardening
-# options as a starting point and check `systemd-analyze security sentinel-agent`.
+# Validated on Ubuntu 24.04.5 arm64 (2026-09-25): starts, reads /var/log/auth.log through the
+# `adm` group, ships to the API; `systemd-analyze security` exposure level 4.2 (OK).
+# Not yet validated on other distributions.
 [Unit]
 Description=SentinelLite log agent
 After=network-online.target
