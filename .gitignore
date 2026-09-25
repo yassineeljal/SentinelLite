@@ -1,0 +1,22 @@
+.DS_Store
+
+# Secrets and local config
+.env
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+dist/
+
+# Node
+node_modules/
+
+# Data that must never be committed
+*.mmdb
+graphify-out/
