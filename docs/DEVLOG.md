@@ -13,6 +13,33 @@ Entry template:
 
 ---
 
+## 2026-09-25 — M1 security fixes from the review (PR #8)
+
+**What**
+- **Cross-agent blinding fixed** (medium, found by the M1 security review). New rule option `scope: agent | global` (default `agent`): detection windows, cooldowns and alert ids are now per agent unless a rule opts into `global`. `MAX_FUTURE_SKEW` lowered from 5 minutes to **5 seconds** (later dates are replaced by the server-side receipt time).
+- **Terminal escape injection fixed** (below the review's reporting threshold, fixed anyway): `sentinel_core/terminal.py::sanitize` escapes control, format (bidi) and unassigned characters; every attacker-controlled field printed by `sentinel alerts list|show` goes through it.
+- Docs: `DETECTION.md` (scope, "Agents are not fully trusted"), ARCHITECTURE §10 + ADR 21.
+
+**The vulnerability, in one paragraph**
+The age of a window is measured from its newest entry, whose date comes from the agent, and 5 minutes of "future" were tolerated — more than `window + tolerance` (90 s). A compromised agent (its key lives on a monitored host) could send one line for the attacker's IP dated +299 s; real failed logins of that IP reported by another agent were then older than the horizon and discarded as "too late", so no alert. The same shared state let an agent add fake failures to a victim IP (framing) or take over an alert id.
+
+**How verified**
+- Regression tests: the exploit from the review (`test_the_review_exploit_cannot_blind_detection_across_agents`, for both scopes); per-agent isolation (framing, counting, alert-id collision); `global` still correlates across agents; future dates kept within 5 s and clamped beyond; `scope` validation; `sanitize` (ANSI cursor/erase, OSC 52, CR/LF/TAB, 8-bit CSI, DEL, bidi override, zero-width, every Unicode code point); a CLI test with escape sequences in user name, host, group and evidence.
+- **Mutation checks**: restoring the 5-minute skew makes the exploit succeed again (`attack went undetected with scope=global`) and fails the two skew tests; making state shared across agents fails the three isolation tests. Both restored afterwards.
+- 218 tests with real Redis and Postgres (163 pass without them); `ruff`, `mypy --strict` clean.
+
+**Trade-offs**
+- Correlating one source across several hosts now needs `scope: global` (none of the shipped rules does; both are per-host).
+- Hosts with clocks more than 5 s ahead get their lines dated by the server: detection still works, ordering inside a batch is lost.
+- `scope: global` rules still share state; they rely on the clamp only. Documented in `DETECTION.md`.
+
+**Problems & lessons**
+- My first attempt to write these docs failed on a quoting error in a helper script, yet the commit command that followed still ran and produced a commit *without* the documentation. Caught immediately from the commit's file list and amended before pushing. Lesson: chain such steps so that a failed step stops the rest.
+
+**Not done**: the `code-review` pass over M1 (next), TLS between agents and the API (lab only for now), `/docs` exposure, pinning of images and actions.
+
+---
+
 ## 2026-09-25 — M1 (step 6) — Detector worker, alerts and the end-to-end slice (PR #7)
 
 **What**

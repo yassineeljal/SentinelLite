@@ -17,6 +17,7 @@ from sentinel_core.auth.registry import VALID_OS, AgentNameTaken, PostgresAgentR
 from sentinel_core.config import get_settings
 from sentinel_core.db.alerts import AmbiguousAlertId, get_alert, list_alerts
 from sentinel_core.db.session import create_engine, create_sessionmaker
+from sentinel_core.terminal import sanitize
 
 # Alert id prefixes are used in a LIKE pattern: only hexadecimal is accepted (no wildcards).
 _HEX = re.compile(r"^[0-9a-f]{6,64}$")
@@ -86,8 +87,8 @@ async def _alerts(args: argparse.Namespace, sessions: async_sessionmaker[AsyncSe
         if args.command == "list":
             for a in await list_alerts(session, limit=args.limit, rule_id=args.rule):
                 print(
-                    f"{a.ts:%Y-%m-%d %H:%M:%S}  {a.severity:>3}  {a.rule_id:<20} "
-                    f"{a.src_ip or '-':<16} {a.host or '-':<14} {a.user_name or '-':<10} "
+                    f"{a.ts:%Y-%m-%d %H:%M:%S}  {a.severity:>3}  {sanitize(a.rule_id):<20} "
+                    f"{sanitize(a.src_ip):<16} {sanitize(a.host):<14} {sanitize(a.user_name):<10} "
                     f"x{a.match_count:<3} {a.alert_id[:12]}"
                 )
             return 0
@@ -106,18 +107,19 @@ async def _alerts(args: argparse.Namespace, sessions: async_sessionmaker[AsyncSe
             print("error: alert not found", file=sys.stderr)
             return 1
         a = detail.summary
-        group = " ".join(f"{k}={v}" for k, v in detail.group.items())
-        print(f"{a.rule_id}: {a.title}  [{', '.join(detail.mitre)}]  severity {a.severity}")
+        group = " ".join(f"{sanitize(k)}={sanitize(str(v))}" for k, v in detail.group.items())
+        mitre = ", ".join(sanitize(t) for t in detail.mitre)
+        print(f"{sanitize(a.rule_id)}: {sanitize(a.title)}  [{mitre}]  severity {a.severity}")
         print(f"id      {a.alert_id}")
         print(f"time    {a.ts:%Y-%m-%d %H:%M:%S} UTC (stored {a.created_at:%H:%M:%S})")
-        print(f"who     {group}  host={a.host or '-'}  user={a.user_name or '-'}")
+        print(f"who     {group}  host={sanitize(a.host)}  user={sanitize(a.user_name)}")
         print(f"count   {a.match_count} event(s), {len(detail.evidence)} shown")
         if detail.detection_latency is not None:
             ms = detail.detection_latency.total_seconds() * 1000
             print(f"detection latency  {ms:.0f} ms (line received -> alert stored)")
         print("evidence (oldest first):")
         for e in detail.evidence:
-            print(f"  {e.ts:%H:%M:%S}  {e.action:<13} {e.raw}")
+            print(f"  {e.ts:%H:%M:%S}  {sanitize(e.action):<13} {sanitize(e.raw)}")
         return 0
 
 

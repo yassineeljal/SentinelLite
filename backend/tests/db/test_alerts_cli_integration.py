@@ -129,3 +129,30 @@ async def test_show_refuses_an_ambiguous_prefix(
 
     assert "ambiguous" in capsys.readouterr().err
     get_settings.cache_clear()
+
+
+async def test_attacker_controlled_fields_cannot_inject_terminal_escapes(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert DATABASE_URL is not None
+    hostile = "root\x1b]52;c;ZWNobyBwd25lZA==\x07\x1b[2K"
+    trigger = event(0).model_copy(update={"raw": f"fake evidence\x1b[1A\x1b[2K {hostile}"})
+    poisoned = alert("ef" * 32, n=0).model_copy(
+        update={"user_name": hostile, "host": hostile, "group": {"src_ip": hostile}}
+    )
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    async with sessions.begin() as session:
+        await insert_events(session, [trigger])
+        await insert_alerts(session, [poisoned])
+    monkeypatch.setenv("SENTINEL_DATABASE_URL", DATABASE_URL)
+    get_settings.cache_clear()
+
+    assert await asyncio.to_thread(cli.main, ["alerts", "list"]) == 0
+    listing = capsys.readouterr().out
+    assert await asyncio.to_thread(cli.main, ["alerts", "show", "efefef"]) == 0
+    detail = capsys.readouterr().out
+
+    for output in (listing, detail):
+        assert "\x1b" not in output and "\x07" not in output and "\r" not in output
+        assert "\\x1b" in output  # visible, not silently dropped
+    get_settings.cache_clear()

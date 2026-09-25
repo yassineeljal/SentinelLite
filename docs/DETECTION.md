@@ -21,6 +21,7 @@ match:                        # ALL conditions must hold (AND)
 group_by: [src_ip]            # threshold: count per group. match: cooldown per group (optional)
 threshold: {count: 5, window: 60s}   # threshold rules only; count >= 2
 cooldown: 300s                # optional. Default: the window (threshold) / none (match). 0s disables
+scope: agent                  # optional. agent (default): state per agent | global: events of all agents together
 enabled: true                 # optional
 ```
 
@@ -61,13 +62,24 @@ engine rather than plain `re`.
   event inside the tolerance still counts against its own window. An event older than that is
   dropped on arrival: it counts for nothing and never alerts. Consequence: logs replayed more than
   30 s out of order across a window boundary can be missed.
-- **Group keys** are hashed (SHA-256) before use in a Redis key: group values such as user names are
+- **Group keys** (per agent unless `scope: global`) are hashed (SHA-256) before use in a Redis key: group values such as user names are
   attacker-controlled and unbounded. The alert keeps a copy of each group value (≤ 256 chars).
 - **Events that lack a group field** (e.g. a login whose source IP could not be parsed) are skipped
   by rules grouping on that field: they cannot be attributed.
-- **Forged timestamps.** Agents control the timestamps in their lines. A timestamp more than
-  5 minutes after the server-side receipt time is replaced by the receipt time, so a far-future
-  date can neither drag a window away from real events nor hide an attack.
+- **Agents are not fully trusted.** An agent's key lives on a monitored host, so a compromised host
+  can send any line: any source IP, any timestamp. Two rules of the engine bound the damage:
+  - **Forged timestamps.** The age of a window is measured from its *newest* entry, so a date far
+    in the future would push the window away from real events and get them discarded as "too
+    late" (blinding detection). A timestamp more than **5 seconds** ahead of the server-side receipt
+    time is therefore replaced by the receipt time. The skew must stay well below
+    `window + 30 s`; at 5 s a forged date can only shorten the out-of-order tolerance slightly.
+    A host whose clock runs more than 5 s ahead is simply dated by the server. (The first version
+    tolerated 5 minutes, which allowed exactly that attack; see the security review in the DEVLOG.)
+  - **Agent isolation (`scope`).** By default (`scope: agent`) every agent has its own windows and
+    cooldowns: a compromised agent cannot add fake failures to an IP that other agents report
+    (framing), cannot disturb their windows, and cannot occupy their alert ids. Use
+    `scope: global` only for rules that must correlate hosts, e.g. one source spraying many
+    machines; such rules share state across agents and rely on the timestamp clamp above.
 - **Evidence** is the list of event ids in the window, newest first, capped at 50 (`match_count`
   still reports the true count).
 - **State store.** `RedisWindowStore` keeps one sorted set per (rule, group) and evaluates each
@@ -80,7 +92,7 @@ engine rather than plain `re`.
 
 | Rule | Technique | Type | Logic |
 |---|---|---|---|
-| `ssh-bruteforce` | T1110 | threshold | ≥ 5 failed logins per source IP in 60 s, one alert per 5 min |
+| `ssh-bruteforce` | T1110 | threshold | ≥ 5 failed logins per source IP **as seen by one agent** in 60 s, one alert per 5 min |
 | `ssh-root-login` | T1078 | match | successful login as `root`, one alert per source IP per minute |
 
 ## Adding a rule
