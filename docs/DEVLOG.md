@@ -13,6 +13,41 @@ Entry template:
 
 ---
 
+## 2026-09-25 — Linux agent (PR #11)
+
+**Housekeeping first** — PRs #1–#10 (M0 and the whole M1 backend slice) were merged into `main` on 2026-09-25 with merge commits, in order, each retargeted to `main` beforehand; `main` is identical to the last stacked branch and its CI is green (246 tests). The merged branches were kept on GitHub. From now on each piece of work is a branch from `main` and a PR straight into `main`.
+
+**What**
+- `agents/linux/` (`sentinel-agent`, standard library only, Python ≥ 3.11): `config.py` (strict TOML, key from a private file or the environment), `state.py` (atomic position store), `tailer.py` (rotation-aware line reader), `client.py` (HTTP client mapping every status of the API contract to a value), `shipper.py` (delivery loop), `cli.py` (`--once`, exit codes).
+- `deploy/sentinel-agent.service` (hardened systemd unit) and `agent.toml.example`; a CI job for the agent (ruff, mypy strict, pytest).
+- Docs: new [`AGENT.md`](AGENT.md) (guarantees, log handling table, install, exit codes, security, limits), ADR 23, `OPERATIONS.md` recipe to try it against the local stack, cross-link from `INGESTION_API.md`.
+
+**Design notes**
+- **The log file is the buffer.** A position is committed only after a `202`; a crash or outage re-sends, never skips, and the server's idempotency key (agent + source + `<inode>:<offset>` + content) absorbs the repeats. No separate disk queue: it would only add failure modes.
+- **Rotation like `tail -F`**: the old file stays open until drained (even if deleted: link count 0 is detected, which also covers a recycled inode number), then the new one is followed from its start; after a restart the rotated file is found by its saved inode; a fingerprint of the first 256 bytes, stored once the position is past them, distinguishes files that reuse an inode number.
+- **Never stuck, never silently discarding**: a refused batch (`422`/`413`) is bisected until the offending line is alone and only that line is dropped; ten refused lines in a row stop the agent (exit 3) instead of eating the log. `401` stops it (exit 2) with the refused lines left unacknowledged. `503`/network errors are retried forever with capped exponential backoff and jitter; `429` waits `Retry-After`.
+- **Hostile bytes never reach the API as a poison pill** (mirror of the server-side fix): NUL escaped, invalid UTF-8 replaced, lines above 8192 characters truncated after escaping, so the API never has reason to refuse a whole batch.
+- **Key hygiene**: never read from the configuration file, refused if its file is group/other-readable, hidden from `repr()` and logs, never sent through a redirect (redirects are refused), TLS verification cannot be disabled. A plaintext `http://` server on a non-loopback address is accepted (isolated lab) with a warning.
+
+**How verified**
+- 95 tests, ruff and mypy strict clean: config (24 cases incl. key handling and typos), state (atomic write, corruption), tailer (rotation by rename/delete, copytruncate, resume across a rotation, recycled inode, partial lines, hostile bytes, long lines, batching), client against a **real local HTTP server** (every status, timeouts, refused connection, redirect refusal, key never logged), shipper (commit only after the ack, 429/backoff, bisection, circuit breaker, crash before commit, stop during backoff, two sources), CLI exit codes.
+- **Mutation checks**: committing the position before the server answers fails four shipper tests; removing the circuit breaker fails the systematic-rejection test.
+- **Real end-to-end** (agent on the Mac tailing a temp `auth.log`, against the real Docker stack): six failed SSH logins written over 5 s → one `ssh-bruteforce` alert; **106 ms** from the fifth line being written to the alert being stored (poll interval 0.2 s). API stopped during an attack → the agent backed off and retried (`TimeoutError`, `Connection refused`), and after the API came back the five events and the single alert arrived once each. `mv auth.log auth.log.1` + a new file → all four lines (two before, two after the rotation) arrived, positions moved to the new inode. Agent stopped with SIGTERM, 30 lines written meanwhile, restart → exactly 30 events, all distinct. Key revoked → the agent exited with a clear message and left the refused line unacknowledged (115 bytes).
+
+**Problems & lessons**
+- A first version of the client test bounded only the server's error text, not the `HTTP 422:` prefix, so the "bounded detail" assertion failed: the bound now applies to the whole string.
+- My "stop during a backoff" test set the stop flag *before* running, which cannot exercise a wait interrupted by SIGTERM; rewritten so the wait itself requests the stop.
+- Two of my end-to-end shell checks were wrong (`docker compose` run from the wrong directory reported "0 events"; a path with a double `/` raised a `KeyError`), and I first read them as agent failures. Both were re-run correctly and the data was right each time. Lesson: verify the measuring script before doubting the system.
+- `pytest` teardown of the fake HTTP server took 0.5 s per test (default `serve_forever` poll interval); set to 20 ms.
+
+**Not done yet / limits** (also in `AGENT.md`)
+- **Not run on a real Linux host**: the systemd unit and its hardening are unvalidated until the lab exists; the agent itself ran on macOS against the local stack.
+- Polling instead of inotify; compressed rotated files not followed; `copytruncate` can lose a few lines; `nginx.access` lines are accepted by the API but dead-lettered (no normalizer yet); no response channel (actions by pull come with M5); no client certificates or proxy support.
+
+**Next**: `lab/README.md` (UTM VMs, host-only network, sshd on `target-linux`, installing the agent there) and the real attack from Kali, measuring the "attack → alert < 10 s" criterion with a real attacker.
+
+---
+
 ## 2026-09-25 — Robustness fixes from the full M1 code review (PR #10)
 
 **Context** — `/code-review high backend/src/sentinel_core` was the first review that actually read the whole M1 code (the two earlier runs had been scoped to the README and to one commit). It reported ten findings; eight were real and are fixed here, one is declined, one is deferred.

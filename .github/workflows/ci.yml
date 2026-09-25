@@ -46,6 +46,22 @@ jobs:
       - run: uv run mypy src tests
       - run: uv run pytest -q
 
+  agent:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agents/linux
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy src tests
+      - run: uv run pytest -q
+
   docker-build:
     runs-on: ubuntu-latest
     steps:
