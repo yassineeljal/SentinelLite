@@ -73,8 +73,23 @@ transaction. Consumers (the normalizer) read through a consumer group and must d
 after acknowledging them, otherwise the stream length eventually reaches the watermark and the API
 answers `429`.
 
+## Managing agents
+
+Agents live in the Postgres `agents` table (`id`, `name`, `os`, `key_hash`, `created_at`,
+`revoked_at`); only the key hash is stored. Administration goes through the CLI:
+
+```
+docker compose exec api sentinel agents create --name ubuntu-01 --os linux   # prints the key ONCE
+docker compose exec api sentinel agents list                                  # never shows keys
+docker compose exec api sentinel agents revoke <agent_id>                     # immediate: next request is 401
+```
+
+A revoked agent is indistinguishable from an unknown one (same `401`). Names are unique;
+`os` is `linux` or `windows`. There is no key rotation yet: revoke and create a new agent.
+
 ## Not implemented yet
 
-- Persistent agent registry (Postgres) and agent creation/revocation CLI — next step.
 - Per-agent rate limiting.
+- `last_seen_at` tracking (needs write throttling to avoid one UPDATE per batch).
 - The `GET /v1/agents/me/actions` polling endpoint used by the responder.
+- Disabling `/docs` and `/openapi.json` outside development.

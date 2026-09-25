@@ -180,7 +180,7 @@ An automated responder that blocks the wrong IP is worse than none. **Non-negoti
 ## 9. Data model (PostgreSQL)
 
 ```
-agents(id, name, os, api_key_hash, last_seen_at, status)
+agents(id, name UNIQUE, os, key_hash, created_at, revoked_at)   -- implemented (migration 0001); last_seen_at comes later
 events(event_id PK, ts, received_at, agent_id, source, category, action, outcome, severity,
        src_ip inet, dst_ip inet, dst_port, host, user_name, extra jsonb, raw)
         -- partitioned by day on ts; indexes (ts), (src_ip, ts), (action, ts)
@@ -281,6 +281,7 @@ SentinelLite/
 | 14 | **Explicit backpressure** (high watermark → `429`), one stream entry per line, atomic batch write | `MAXLEN` trimming, one entry per batch | Trimming loses unprocessed events without any signal; per-line entries let consumer-group members share work; `MULTI/EXEC` makes a batch all-or-nothing so agent retries stay idempotent. |
 | 15 | **Agent key = `Bearer <uuid>.<256-bit secret>`, SHA-256 stored, constant-time compare, one generic 401** | Argon2/bcrypt for keys, mTLS, JWT for agents | The secret is random, so a slow hash adds nothing; a single 401 avoids agent-id enumeration; identity comes from the key, never from the body. mTLS remains an option for production hardening. |
 | 16 | **Fail closed** when no agent registry is configured; app built by a factory (`create_app`) with injectable dependencies | Module-level app singleton, permissive default | Safe default for a security product; no side effects at import time; tests inject fakes, integration tests use real Redis. |
+| 17 | **Alembic migrations run by a one-shot `migrate` compose service**; SQLAlchemy 2 async + asyncpg; named constraints | Auto-create tables at API startup, migrations inside the API entrypoint | The API never needs schema-changing rights at runtime, migrations are explicit and reversible (upgrade/downgrade/upgrade is tested), `alembic check` catches model/migration drift, and several API replicas cannot race to migrate. |
 
 ## 14. Roadmap (vertical slices)
 

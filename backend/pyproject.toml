@@ -5,11 +5,17 @@ description = "SentinelLite core: ingestion API and detection/response workers"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "alembic>=1.20.0",
+    "asyncpg>=0.31.0",
     "fastapi>=0.141.1",
     "pydantic-settings>=2.15.0",
     "redis>=8.1.0",
+    "sqlalchemy[asyncio]>=2.1.0",
     "uvicorn[standard]>=0.53.0",
 ]
+
+[project.scripts]
+sentinel = "sentinel_core.cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -36,7 +42,7 @@ plugins = ["pydantic.mypy"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-markers = ["integration: needs a real Redis (SENTINEL_TEST_REDIS_URL)"]
+markers = ["integration: needs real Redis/Postgres (SENTINEL_TEST_REDIS_URL, SENTINEL_TEST_DATABASE_URL)"]
 
 [dependency-groups]
 dev = [

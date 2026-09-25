@@ -13,6 +13,50 @@ Entry template:
 
 ---
 
+## 2026-09-25 — M1 (step 3) — Postgres agent registry, migrations and admin CLI (PR #4)
+
+**What**
+- `db/models.py`, `db/session.py`: SQLAlchemy 2 (async, asyncpg), `Agent` model with named constraints (`pk_agents`, `uq_agents_name`, `ck_agents_os`).
+- Alembic (`backend/alembic.ini`, `backend/migrations/`): async `env.py` reading `SENTINEL_DATABASE_URL`, migration `0001_create_agents`.
+- `auth/registry.py`: `PostgresAgentRepository` — `get_key_hash` (active agents only), `create_agent` (key returned once), `revoke_agent`, `list_agents` (public `AgentInfo` carries no key material).
+- `cli.py` (`sentinel agents create|list|revoke`, installed as a console script).
+- `create_app()` builds the Postgres registry at startup when none is injected; before startup (and in apps that never start) it stays fail-closed.
+- Compose: one-shot `migrate` service (`alembic upgrade head`) that the API waits for (`service_completed_successfully`); the image now ships `alembic.ini` and `migrations/`.
+- CI: Postgres service container next to Redis, so the database tests run there too.
+- Docs: new [`OPERATIONS.md`](OPERATIONS.md) (run, administer, migrate, test, troubleshoot), `INGESTION_API.md` gained "Managing agents", ADR 17.
+
+**Why**
+Until now `/v1/ingest` failed closed for everyone. A persistent, revocable registry is what turns the authenticated API into something the lab agents can actually use, and it introduces the database layer (SQLAlchemy + Alembic) that events, alerts and incidents will reuse.
+
+**Design notes**
+- Revocation is a timestamp (`revoked_at`), not a delete: the agent stays listed for audit, and `get_key_hash` filters revoked rows, so a revoked key gets the same `401` as an unknown one.
+- The plaintext key exists only in the return value of `create_agent` and the CLI's stdout (`key: …`); the warning goes to stderr so scripts can capture the key cleanly.
+- Migrations run in a separate one-shot service instead of the API entrypoint (ADR 17): explicit, reversible, and safe with several API replicas.
+
+**How verified**
+- 67 tests (52 unit + 15 integration against real Postgres and Redis). New DB tests cover: key verifies against the stored hash; only the hash is stored (the secret and token appear nowhere in a full `SELECT *`); unknown/revoked agents; double revoke; unique names; the `os` check; listing exposes no key material; **end to end** create → ingest (202) → revoke → ingest (401, nothing published); CLI create/list/revoke; migrations upgrade → downgrade → upgrade; `alembic check` (models match migrations).
+- `ruff`, `mypy --strict` clean.
+- Real compose stack: `migrate` ran `0001`, `sentinel agents create` inside the container, `POST /v1/ingest` with the real key → `202` and the line is in `events.raw`; wrong secret → `401`; after `agents revoke` → `401`; the database holds a 64-char hash only.
+
+**Security review of PR #3 (ingestion API)**: no finding at or above the reporting threshold. Low-severity notes kept for later:
+- `/docs`, `/openapi.json` and the version in `/healthz` are unauthenticated → disable outside development.
+- An authenticated agent controls the timestamps in its lines → the detection engine should also compare event `ts` with the server-side `received_at` and flag large skews.
+- `ghcr.io/astral-sh/uv:latest` and `actions/checkout@v4` are not pinned by digest → pin before any production use.
+- Local users can forge `sshd` lines with `logger -t sshd` (inherent to syslog) → mitigated later by multi-source correlation.
+
+**Problems & lessons**
+- `create_agent` is used both from the API process and the CLI, so the name-uniqueness error is a domain exception (`AgentNameTaken`) rather than a leaked `IntegrityError`.
+- pytest-asyncio + Alembic: `env.py` uses `asyncio.run`, which cannot run inside a running event loop, so the migration fixture and the `alembic check` test are synchronous.
+- The integration tests truncate `agents`: documented in `OPERATIONS.md` that `SENTINEL_TEST_DATABASE_URL` must never point at real data.
+
+**Not done yet / limits**
+- Nothing consumes `events.raw` yet; the compose stack accumulates lines until the watermark (`429`). The normalizer worker is the next step.
+- No `last_seen_at`, no key rotation (revoke + create), no per-agent rate limiting.
+
+**Next**: normalizer worker — consumer group on `events.raw`, `linux.auth` normalizer, `events` table (daily partitions) and `events_dead_letter`, deleting entries after acknowledgement.
+
+---
+
 ## 2026-09-24 — M1 (step 2) — Ingestion API and raw log stream (PR #3)
 
 **What**

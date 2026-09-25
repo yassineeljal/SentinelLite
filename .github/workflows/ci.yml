@@ -21,9 +21,20 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping" --health-interval 5s
           --health-timeout 3s --health-retries 10
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U test" --health-interval 5s
+          --health-timeout 3s --health-retries 10
     env:
-      # Enables the integration tests (tests/bus) against a real Redis.
+      # Enable the integration tests (tests/bus, tests/db) against real services.
       SENTINEL_TEST_REDIS_URL: redis://localhost:6379/0
+      SENTINEL_TEST_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
