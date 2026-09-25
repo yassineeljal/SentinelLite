@@ -61,6 +61,25 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Consumes events.normalized, applies the detection rules, writes alerts. The rules are
+  # read once at startup (bad rules => the worker refuses to start): edit `rules/`, then
+  # `docker compose restart detector`.
+  detector:
+    build: *app-build
+    command: ["python", "-m", "sentinel_core.workers.detector"]
+    environment:
+      <<: *database-url
+      SENTINEL_REDIS_URL: redis://redis:6379/0
+      SENTINEL_RULES_DIR: /app/rules
+    volumes:
+      - ../rules:/app/rules:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   api:
     build: *app-build
     environment:

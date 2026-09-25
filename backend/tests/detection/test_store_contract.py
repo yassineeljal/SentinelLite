@@ -197,16 +197,56 @@ async def test_evidence_is_capped(store: WindowStore, key: str) -> None:
 
 
 async def test_acquire_cooldown_allows_once_per_period(store: WindowStore, key: str) -> None:
-    async def acquire(offset_s: int, cooldown_s: int = 60) -> bool:
-        return await store.acquire_cooldown(key, BASE + offset_s * S, cooldown_s * S)
+    async def acquire(offset_s: int, member: str, cooldown_s: int = 60) -> bool:
+        return await store.acquire_cooldown(key, BASE + offset_s * S, cooldown_s * S, member)
 
-    assert await acquire(0) is True
-    assert await acquire(30) is False
-    assert await acquire(59) is False
-    assert await acquire(60) is True
-    assert await acquire(61) is False
+    assert await acquire(0, "a") is True
+    assert await acquire(30, "b") is False
+    assert await acquire(59, "c") is False
+    assert await acquire(60, "d") is True
+    assert await acquire(61, "e") is False
 
 
 async def test_acquire_cooldown_with_zero_always_allows(store: WindowStore, key: str) -> None:
-    assert await store.acquire_cooldown(key, BASE, 0) is True
-    assert await store.acquire_cooldown(key, BASE, 0) is True
+    assert await store.acquire_cooldown(key, BASE, 0, "a") is True
+    assert await store.acquire_cooldown(key, BASE, 0, "b") is True
+
+
+async def test_redelivery_of_the_event_that_raised_an_alert_raises_it_again(
+    store: WindowStore, key: str
+) -> None:
+    """At-least-once delivery: if the worker crashed after evaluating but before persisting
+    the alert, the redelivered event must not find the alert 'already raised' and lose it.
+    Alert ids are deterministic, so raising it twice is harmless downstream."""
+    for i in range(4):
+        await store.record_and_check(
+            key, f"e{i}", BASE + i * S, window_ms=WINDOW, count=5, cooldown_ms=300_000
+        )
+    first = await store.record_and_check(
+        key, "e4", BASE + 4 * S, window_ms=WINDOW, count=5, cooldown_ms=300_000
+    )
+    suppressed = await store.record_and_check(
+        key, "e5", BASE + 5 * S, window_ms=WINDOW, count=5, cooldown_ms=300_000
+    )
+
+    again = await store.record_and_check(
+        key, "e4", BASE + 4 * S, window_ms=WINDOW, count=5, cooldown_ms=300_000
+    )
+    suppressed_again = await store.record_and_check(
+        key, "e5", BASE + 5 * S, window_ms=WINDOW, count=5, cooldown_ms=300_000
+    )
+
+    assert first.hit and not suppressed.hit
+    assert again.hit and again.count == 5  # the trigger re-raises
+    assert not suppressed_again.hit  # any other event of the cooldown stays suppressed
+
+
+async def test_acquire_cooldown_redelivery_of_the_same_member(store: WindowStore, key: str) -> None:
+    async def acquire(offset_s: int, member: str) -> bool:
+        return await store.acquire_cooldown(key, BASE + offset_s * S, 60 * S, member)
+
+    assert await acquire(0, "a") is True
+    assert await acquire(10, "b") is False
+    assert await acquire(0, "a") is True  # redelivery of the event that started the cooldown
+    assert await acquire(70, "c") is True  # a new period starts...
+    assert await acquire(0, "a") is False  # ...and the old trigger no longer re-raises

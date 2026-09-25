@@ -98,8 +98,44 @@ engine rather than plain `re`.
 Scenarios are also the seed of the detection benchmark (detection rate / false positives) planned
 for the final report.
 
-## Limits of this step
+## In the stack: the detector worker
 
-- Nothing reads events yet: the detector worker (consume `events.normalized`, persist alerts) is the
-  next step. The engine only exists as a library plus tests.
-- Two rules, one source (`linux.auth`).
+`docker compose` runs a `detector` service (`sentinel_core/workers/detector.py`):
+
+1. the normalizer publishes every persisted event to the stream `events.normalized`;
+2. the detector reads it through the consumer group `detectors`, evaluates the engine
+   (`RedisWindowStore`), writes the alerts to the `alerts` table (and evaluation failures to
+   `events_dead_letter`), and only then acknowledges and deletes the entries.
+
+- **Rules are read once at startup** from `SENTINEL_RULES_DIR` (`rules/`, mounted read-only in
+  compose). An invalid rule set, or an empty one, makes the worker refuse to start and print every
+  problem. After editing rules: `docker compose restart detector`. Hot reload is not implemented.
+- **At-least-once, without lost or duplicate alerts.** If the worker crashes after evaluating but
+  before persisting, the entries are redelivered. Window state is idempotent per event, alert ids
+  are deterministic (threshold: rule + group + time; match: rule + event), inserts ignore
+  duplicates, and the event that raised an alert is allowed to raise it again during the cooldown.
+  Every other event of the cooldown stays suppressed. Tested with a real crash simulation.
+- **Failure handling.** A Redis/Postgres error leaves the batch pending and it is retried. A bug in
+  one rule (exception while evaluating an event) is contained: that event is recorded in
+  `events_dead_letter` with `source = events.normalized`, the rest of the batch proceeds.
+- **Backpressure.** While `events.normalized` holds `SENTINEL_NORMALIZED_STREAM_HIGH_WATERMARK`
+  entries (default 100 000) the normalizer stops reading `events.raw`; the backlog then builds up
+  where it is bounded, and the API answers `429` to agents.
+- **Reading alerts.** `sentinel alerts list [--rule ID] [--limit N]` and `sentinel alerts show <id
+  prefix>` (evidence events and the detection latency: line received by the API -> alert stored).
+  There is deliberately no HTTP endpoint yet: it would need user authentication (dashboard, M4).
+
+### Replaying old logs
+
+Detection state is per (rule, group) and in event time. After live traffic has moved a group's
+window to time `T`, replaying logs of that group older than `T - window - 30 s` finds them
+"too late" and they are ignored (and their cooldown was in the future). To test with historical
+data on a running stack, either use groups (e.g. IPs) not seen live, or clear the detector state:
+`redis-cli --scan --pattern 'sl:det:*' | xargs redis-cli del`.
+
+## Limits
+
+- Two rules, one source (`linux.auth`); no `sequence` / `stateful` rules, no regex conditions.
+- No hot reload of rules; no per-rule metrics yet.
+- Alerts have no status, assignee or enrichment yet (incidents and enrichment are M3/M4).
+- No poison-event handling beyond containment of rule exceptions.

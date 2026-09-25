@@ -220,3 +220,17 @@ async def test_a_forged_future_timestamp_cannot_evict_evidence_or_hide_an_attack
 
     assert len(alerts) == 1  # the fifth failure still counts
     assert alerts[0].ts == now  # and it is dated with the clamped time
+
+
+async def test_redelivered_trigger_re_raises_the_same_alert_and_nothing_else() -> None:
+    """A detector that crashed before persisting sees the same events again."""
+    eng = engine(brute_force_rule())
+    events = [make_event(i, at=i) for i in range(7)]
+    first_pass = [a for e in events for a in await eng.evaluate(e)]
+
+    second_pass = [a for e in events for a in await eng.evaluate(e)]
+
+    assert len(first_pass) == 1
+    assert [a.alert_id for a in second_pass] == [
+        first_pass[0].alert_id
+    ]  # same id: no duplicate row

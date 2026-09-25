@@ -1,10 +1,11 @@
-"""Normalizer worker: `events.raw` (Redis) -> `events` / `events_dead_letter` (Postgres).
+"""Normalizer worker: `events.raw` (Redis) -> `events` / `events_dead_letter` (Postgres),
+and `events.normalized` (Redis) for the detector.
 
-Delivery is at-least-once and safe to repeat:
-  1. read a batch through a consumer group (plus entries abandoned by crashed consumers),
-  2. write events and dead letters in one database transaction (idempotent inserts),
-  3. only then acknowledge and delete the entries from the stream.
-A crash between 2 and 3 redelivers the batch; the idempotent inserts absorb the repeat.
+Per batch: classify every entry, write events and dead letters in one database transaction
+(idempotent inserts), publish the events downstream, and only then let the base class acknowledge
+and delete the raw entries (see `consumer.py`). Events are published even when the insert found
+them already stored: a crash between persisting and publishing must not hide an event from the
+detector, and the detector is idempotent.
 """
 
 import asyncio
@@ -15,14 +16,12 @@ import socket
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from time import monotonic
-from typing import Any
 
 from pydantic import ValidationError
 from redis.asyncio import Redis
-from redis.exceptions import RedisError, ResponseError
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from sentinel_core.bus.normalized_stream import RedisNormalizedPublisher
 from sentinel_core.bus.raw_stream import DATA_FIELD, RAW_STREAM
 from sentinel_core.config import get_settings
 from sentinel_core.db.events import ensure_event_partitions, insert_dead_letters, insert_events
@@ -31,6 +30,7 @@ from sentinel_core.normalizers.base import ParseError, RawLog, make_event_id
 from sentinel_core.normalizers.dead_letter import DeadLetterRecord
 from sentinel_core.normalizers.registry import NORMALIZERS
 from sentinel_core.schema.event import Event
+from sentinel_core.workers.consumer import BLOCK_MS, Entry, StreamConsumer, build_redis
 
 logger = logging.getLogger("sentinel.normalizer")
 
@@ -38,15 +38,18 @@ GROUP = "normalizers"
 PARTITIONS_BEHIND = 1  # days before today
 PARTITIONS_AHEAD = 7  # days after today
 PARTITION_REFRESH_SECONDS = 3600
-RETRY_DELAY_SECONDS = 2.0
-BLOCK_MS = 5000  # how long a read waits for new entries
-# Must exceed BLOCK_MS: the client's default read timeout is close to it, so an idle worker
-# would otherwise drop its connection and log an error every few seconds.
-SOCKET_TIMEOUT_SECONDS = BLOCK_MS / 1000 + 10
 MAX_ERROR_LENGTH = 500
 MAX_RAW_LENGTH = 16_384
 
-__all__ = ["GROUP", "NORMALIZERS", "DeadLetterRecord", "NormalizerWorker", "process_entry"]
+__all__ = [
+    "BLOCK_MS",
+    "GROUP",
+    "NORMALIZERS",
+    "DeadLetterRecord",
+    "NormalizerWorker",
+    "build_redis",
+    "process_entry",
+]
 
 
 def _dead_letter(data: str, error: str, raw_log: RawLog | None = None) -> DeadLetterRecord:
@@ -88,7 +91,7 @@ def process_entry(data: str) -> Event | DeadLetterRecord | None:
         return _dead_letter(data, f"unexpected error: {type(exc).__name__}: {exc}", raw_log)
 
 
-class NormalizerWorker:
+class NormalizerWorker(StreamConsumer):
     def __init__(
         self,
         redis: Redis,
@@ -99,21 +102,23 @@ class NormalizerWorker:
         group: str = GROUP,
         batch_size: int = 100,
         claim_idle_ms: int = 60_000,
+        publisher: RedisNormalizedPublisher | None = None,
     ) -> None:
-        self._redis = redis
+        super().__init__(
+            redis,
+            stream=stream,
+            group=group,
+            consumer=consumer,
+            logger=logger,
+            batch_size=batch_size,
+            claim_idle_ms=claim_idle_ms,
+        )
         self._sessions = sessions
-        self._consumer = consumer
-        self._stream = stream
-        self._group = group
-        self._batch_size = batch_size
-        self._claim_idle_ms = claim_idle_ms
+        self._publisher = publisher
+        self._last_partition_check = monotonic()
 
     async def setup(self) -> None:
-        try:
-            await self._redis.xgroup_create(self._stream, self._group, id="0", mkstream=True)
-        except ResponseError as exc:
-            if "BUSYGROUP" not in str(exc):  # the group already exists: fine
-                raise
+        await super().setup()
         await self.ensure_partitions()
 
     async def ensure_partitions(self) -> None:
@@ -125,33 +130,17 @@ class NormalizerWorker:
                 days=PARTITIONS_BEHIND + 1 + PARTITIONS_AHEAD,
             )
 
-    async def run(self, stop: asyncio.Event, block_ms: int = BLOCK_MS) -> None:
-        await self.setup()
-        logger.info("normalizer %s started (stream=%s)", self._consumer, self._stream)
-        last_partition_check = monotonic()
-        while not stop.is_set():
-            try:
-                await self.run_once(block_ms)
-                if monotonic() - last_partition_check > PARTITION_REFRESH_SECONDS:
-                    await self.ensure_partitions()
-                    last_partition_check = monotonic()
-            except (RedisError, SQLAlchemyError, OSError):
-                # Entries were not acknowledged: they stay pending and will be redelivered.
-                logger.exception("batch failed; retrying in %.0fs", RETRY_DELAY_SECONDS)
-                try:
-                    await asyncio.wait_for(stop.wait(), timeout=RETRY_DELAY_SECONDS)
-                except TimeoutError:
-                    pass
-        logger.info("normalizer %s stopped", self._consumer)
+    async def on_tick(self) -> None:
+        if monotonic() - self._last_partition_check > PARTITION_REFRESH_SECONDS:
+            await self.ensure_partitions()
+            self._last_partition_check = monotonic()
 
-    async def run_once(self, block_ms: int | None = None) -> int:
-        """Handle one batch. Returns the number of stream entries handled (0 if none)."""
-        entries = await self._claim_stale()
-        if len(entries) < self._batch_size:
-            entries += await self._read_new(block_ms, self._batch_size - len(entries))
-        if not entries:
-            return 0
+    async def ready(self) -> bool:
+        # Stop reading raw lines while the detector is behind: the backlog stays in
+        # `events.raw`, where it is bounded and turned into 429s by the API.
+        return self._publisher is None or not await self._publisher.is_full()
 
+    async def process_batch(self, entries: list[Entry]) -> None:
         events: list[Event] = []
         letters: list[DeadLetterRecord] = []
         for _, fields in entries:
@@ -163,12 +152,9 @@ class NormalizerWorker:
             elif isinstance(result, DeadLetterRecord):
                 letters.append(result)
 
-        await self._persist(events, letters)  # raises on failure: entries stay pending
-        ids = [entry_id for entry_id, _ in entries]
-        async with self._redis.pipeline(transaction=True) as pipe:
-            pipe.xack(self._stream, self._group, *ids)
-            pipe.xdel(self._stream, *ids)  # else the stream length would hit the API watermark
-            await pipe.execute()
+        await self._persist(events, letters)
+        if self._publisher is not None:
+            await self._publisher.publish(events)
 
         logger.info(
             "batch: %d entries -> %d events, %d dead letters, %d ignored",
@@ -177,43 +163,11 @@ class NormalizerWorker:
             len(letters),
             len(entries) - len(events) - len(letters),
         )
-        return len(entries)
 
     async def _persist(self, events: list[Event], letters: list[DeadLetterRecord]) -> None:
         async with self._sessions.begin() as session:
             await insert_events(session, events)
             await insert_dead_letters(session, letters)
-
-    async def _claim_stale(self) -> list[tuple[str, dict[str, str] | None]]:
-        """Take over entries delivered to a consumer that never acknowledged them."""
-        response: Any = await self._redis.xautoclaim(
-            self._stream,
-            self._group,
-            self._consumer,
-            min_idle_time=self._claim_idle_ms,
-            start_id="0-0",
-            count=self._batch_size,
-        )
-        return [(entry[0], entry[1]) for entry in response[1]]
-
-    async def _read_new(
-        self, block_ms: int | None, count: int
-    ) -> list[tuple[str, dict[str, str] | None]]:
-        response: Any = await self._redis.xreadgroup(
-            self._group, self._consumer, {self._stream: ">"}, count=count, block=block_ms
-        )
-        if not response:
-            return []
-        return [(entry[0], entry[1]) for entry in response[0][1]]
-
-
-def build_redis(url: str) -> Redis:
-    return Redis.from_url(
-        url,
-        decode_responses=True,
-        socket_timeout=SOCKET_TIMEOUT_SECONDS,
-        socket_connect_timeout=5,
-    )
 
 
 async def amain() -> None:
@@ -226,6 +180,9 @@ async def amain() -> None:
         consumer=f"{socket.gethostname()}-{os.getpid()}",
         batch_size=settings.normalizer_batch_size,
         claim_idle_ms=settings.normalizer_claim_idle_ms,
+        publisher=RedisNormalizedPublisher(
+            redis, high_watermark=settings.normalized_stream_high_watermark
+        ),
     )
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()

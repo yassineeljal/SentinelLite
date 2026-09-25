@@ -96,7 +96,10 @@ class DetectionEngine:
             return None
         if rule.cooldown_seconds > 0:
             allowed = await self._store.acquire_cooldown(
-                f"mat:{rule.id}:{_digest(*group)}", _to_ms(ts), rule.cooldown_seconds * 1000
+                f"mat:{rule.id}:{_digest(*group)}",
+                _to_ms(ts),
+                rule.cooldown_seconds * 1000,
+                event.event_id,
             )
             if not allowed:
                 return None

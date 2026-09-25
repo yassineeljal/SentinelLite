@@ -21,6 +21,7 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY backend/alembic.ini ./alembic.ini
 COPY backend/migrations ./migrations
+COPY rules ./rules
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1
 USER sentinel
 EXPOSE 8000

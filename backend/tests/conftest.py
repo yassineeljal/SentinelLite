@@ -29,6 +29,6 @@ async def engine(migrated_database: None) -> AsyncGenerator[AsyncEngine]:
     assert DATABASE_URL is not None
     engine = create_async_engine(DATABASE_URL)
     async with engine.begin() as conn:
-        await conn.execute(text("TRUNCATE agents, events, events_dead_letter"))
+        await conn.execute(text("TRUNCATE agents, events, events_dead_letter, alerts"))
     yield engine
     await engine.dispose()

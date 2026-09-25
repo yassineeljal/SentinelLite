@@ -1,16 +1,25 @@
-"""Administration CLI: `sentinel agents create|list|revoke`.
+"""Administration CLI: `sentinel agents create|list|revoke`, `sentinel alerts list|show`.
 
 In the compose stack:  docker compose exec api sentinel agents create --name ubuntu-01 --os linux
+Alerts are read through this CLI on purpose: there is no HTTP endpoint for them until the
+dashboard brings user authentication (an unauthenticated alerts API would leak detections).
 """
 
 import argparse
 import asyncio
+import re
 import sys
 from uuid import UUID
 
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from sentinel_core.auth.registry import VALID_OS, AgentNameTaken, PostgresAgentRepository
 from sentinel_core.config import get_settings
+from sentinel_core.db.alerts import AmbiguousAlertId, get_alert, list_alerts
 from sentinel_core.db.session import create_engine, create_sessionmaker
+
+# Alert id prefixes are used in a LIKE pattern: only hexadecimal is accepted (no wildcards).
+_HEX = re.compile(r"^[0-9a-f]{6,64}$")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -26,36 +35,90 @@ def build_parser() -> argparse.ArgumentParser:
     agents.add_parser("list", help="list agents (never shows keys)")
     revoke = agents.add_parser("revoke", help="revoke an agent's key")
     revoke.add_argument("agent_id", type=UUID)
+
+    alerts = sub.add_parser("alerts", help="inspect detections").add_subparsers(
+        dest="command", required=True
+    )
+    listing = alerts.add_parser("list", help="most recent alerts first")
+    listing.add_argument("--limit", type=int, default=20)
+    listing.add_argument("--rule", help="only alerts of this rule id")
+    show = alerts.add_parser("show", help="one alert with its evidence and detection latency")
+    show.add_argument("alert_id", help="alert id or unambiguous hexadecimal prefix")
     return parser
 
 
 async def _run(args: argparse.Namespace) -> int:
     engine = create_engine(get_settings())
     try:
-        registry = PostgresAgentRepository(create_sessionmaker(engine))
-        if args.command == "create":
-            try:
-                created = await registry.create_agent(name=args.name, os=args.os)
-            except (AgentNameTaken, ValueError) as exc:
-                print(f"error: {exc}", file=sys.stderr)
-                return 1
-            print(f"created agent {created.agent.name} ({created.agent.id})")
-            print(f"key: {created.token}")
-            print("Store this key now: it cannot be shown again.", file=sys.stderr)
-            return 0
-        if args.command == "revoke":
-            if await registry.revoke_agent(args.agent_id):
-                print(f"revoked {args.agent_id}")
-                return 0
-            print("error: unknown or already revoked agent", file=sys.stderr)
-            return 1
-        for agent in await registry.list_agents():
-            status = "revoked" if agent.revoked_at else "active"
-            since = f"{agent.created_at:%Y-%m-%d}"
-            print(f"{agent.id}  {agent.name:<24} {agent.os:<8} {status:<8} {since}")
-        return 0
+        if args.group == "alerts":
+            return await _alerts(args, create_sessionmaker(engine))
+        return await _agents(args, PostgresAgentRepository(create_sessionmaker(engine)))
     finally:
         await engine.dispose()
+
+
+async def _agents(args: argparse.Namespace, registry: PostgresAgentRepository) -> int:
+    if args.command == "create":
+        try:
+            created = await registry.create_agent(name=args.name, os=args.os)
+        except (AgentNameTaken, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print(f"created agent {created.agent.name} ({created.agent.id})")
+        print(f"key: {created.token}")
+        print("Store this key now: it cannot be shown again.", file=sys.stderr)
+        return 0
+    if args.command == "revoke":
+        if await registry.revoke_agent(args.agent_id):
+            print(f"revoked {args.agent_id}")
+            return 0
+        print("error: unknown or already revoked agent", file=sys.stderr)
+        return 1
+    for agent in await registry.list_agents():
+        status = "revoked" if agent.revoked_at else "active"
+        since = f"{agent.created_at:%Y-%m-%d}"
+        print(f"{agent.id}  {agent.name:<24} {agent.os:<8} {status:<8} {since}")
+    return 0
+
+
+async def _alerts(args: argparse.Namespace, sessions: async_sessionmaker[AsyncSession]) -> int:
+    async with sessions() as session:
+        if args.command == "list":
+            for a in await list_alerts(session, limit=args.limit, rule_id=args.rule):
+                print(
+                    f"{a.ts:%Y-%m-%d %H:%M:%S}  {a.severity:>3}  {a.rule_id:<20} "
+                    f"{a.src_ip or '-':<16} {a.host or '-':<14} {a.user_name or '-':<10} "
+                    f"x{a.match_count:<3} {a.alert_id[:12]}"
+                )
+            return 0
+
+        if not _HEX.fullmatch(args.alert_id):
+            print(
+                "error: the alert id must be hexadecimal (at least 6 characters)", file=sys.stderr
+            )
+            return 1
+        try:
+            detail = await get_alert(session, args.alert_id)
+        except AmbiguousAlertId:
+            print("error: ambiguous id prefix, give more characters", file=sys.stderr)
+            return 1
+        if detail is None:
+            print("error: alert not found", file=sys.stderr)
+            return 1
+        a = detail.summary
+        group = " ".join(f"{k}={v}" for k, v in detail.group.items())
+        print(f"{a.rule_id}: {a.title}  [{', '.join(detail.mitre)}]  severity {a.severity}")
+        print(f"id      {a.alert_id}")
+        print(f"time    {a.ts:%Y-%m-%d %H:%M:%S} UTC (stored {a.created_at:%H:%M:%S})")
+        print(f"who     {group}  host={a.host or '-'}  user={a.user_name or '-'}")
+        print(f"count   {a.match_count} event(s), {len(detail.evidence)} shown")
+        if detail.detection_latency is not None:
+            ms = detail.detection_latency.total_seconds() * 1000
+            print(f"detection latency  {ms:.0f} ms (line received -> alert stored)")
+        print("evidence (oldest first):")
+        for e in detail.evidence:
+            print(f"  {e.ts:%H:%M:%S}  {e.action:<13} {e.raw}")
+        return 0
 
 
 def main(argv: list[str] | None = None) -> int:

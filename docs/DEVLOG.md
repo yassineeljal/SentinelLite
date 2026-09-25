@@ -13,6 +13,46 @@ Entry template:
 
 ---
 
+## 2026-09-25 — M1 (step 6) — Detector worker, alerts and the end-to-end slice (PR #7)
+
+**What**
+- `workers/consumer.py`: `StreamConsumer` base (consumer group, stale-entry takeover, ack + delete, retry loop, downstream backpressure hook). The normalizer was refactored onto it.
+- `workers/detector.py` + `detector` compose service: reads `events.normalized`, applies the engine with `RedisWindowStore`, persists alerts, contains rule bugs as dead letters, refuses to start on a broken or empty rule set.
+- `bus/normalized_stream.py`: the normalizer now publishes `events.normalized` (after persisting, before acking) and stops reading `events.raw` while the detector is behind.
+- Migration `0003` + `AlertRecord`, `db/alerts.py` (idempotent insert, list, show with evidence and detection latency).
+- CLI: `sentinel alerts list|show`. No HTTP endpoint on purpose (alerts are sensitive; user authentication arrives with the dashboard).
+- Store change: the event that raised an alert may raise it again during the cooldown (in memory and in the Lua scripts).
+- Image ships `rules/`; compose mounts them read-only. Docs: ADR 20, `DETECTION.md` (worker, replay caveat), `OPERATIONS.md`.
+
+**Why**
+This closes the M1 vertical slice: a line sent by an agent now becomes an alert with its evidence, measured and inspectable, through every real component.
+
+**Design notes**
+- **The at-least-once trap.** The engine records "alert raised" (cooldown) while evaluating. If the worker crashed before persisting the alert, the redelivered event would find the cooldown set and the alert would be lost. Now the trigger event re-raises the alert (same deterministic id, so the insert is a no-op if it was stored), every other event of the cooldown stays suppressed.
+- Persist first, publish downstream second, ack last: a crash in between only causes idempotent repeats (events are published even if the insert found them already stored, otherwise a crash could hide an event from the detector).
+- Rule bug vs infrastructure error: a `RedisError` propagates (batch retried); any other exception from one rule dead-letters that event and lets the batch proceed, so a single bad rule cannot wedge the stream.
+
+**How verified**
+- 198 tests with real Redis and Postgres (144 pass and 54 skip without them). New: pipeline tests raw → normalizer → detector → `alerts` (an attack raises one alert with the right fields, streams end empty); every shipped scenario through the real pipeline; an agent retrying a whole batch adds no alert and no event; **a crash before the alerts are persisted loses nothing and duplicates nothing**; a rule bug is dead-lettered without blocking; a Redis error is retried, not dead-lettered; an undecodable entry is dead-lettered; the normalizer pauses while the detector is behind and resumes after; CLI list/show/ambiguous/malformed ids.
+- **Mutation check**: removing the trigger re-raise from the Lua script makes exactly the two crash/redelivery tests fail (and restoring it fixes them), so they do guard the property.
+- **Real stack, real HTTP**: six failed SSH logins sent to `POST /v1/ingest` raised one `ssh-bruteforce` alert; `sentinel alerts show` lists its five evidence lines and a **detection latency of 39 ms** (line received by the API → alert stored, single batch on a warm dev stack, not a benchmark). The shipped scenarios replayed through the API gave `ssh-bruteforce` 3 alerts and `ssh-root-login` 2 (per run), the benign files none; both streams empty; no errors in the worker logs.
+
+**Problems & lessons**
+- The first replay of the scenarios gave 1 `ssh-bruteforce` alert instead of 3. Not a bug: my earlier live test had moved the state of `203.0.113.7` to the 25th, so the datasets (24th) were "too late" — exactly the documented semantics. It is now documented as "Replaying old logs" (with how to clear the state), and the clean rerun gave the expected 3.
+- `ssh-root-login` showed 4 alerts after two replays: each replay used different origins, hence different events, hence different alerts (2 per run). Same event identity ⇒ same alert; different identity ⇒ another alert.
+- zsh: `LINES` is a special variable, my shell test failed on it. Unrelated to the project, noted so I stop using that name.
+- Two of my own CLI tests were wrong (column index, a 2-character id prefix the CLI rightly refuses). Fixed in the tests, not in the code.
+- The DB-side alert `created_at` is the transaction start time, which is what the latency figure uses.
+
+**Not done yet / limits**
+- The M1 review (`security-review`, `code-review`) and the lab guide for the real Kali attack are the next two tasks; the "Hydra ⇒ alert in < 10 s" criterion is not yet measured with a real attacker.
+- No hot reload of rules, no per-rule metrics, alerts have no status/enrichment yet, no `alerts.new` stream (added with enrichment/response).
+- Only `linux.auth` normalization; two rules.
+
+**Next**: security and code review of the whole M1 slice, then `lab/README.md` (UTM VMs, network, agent) — after which the actual Linux agent that tails `auth.log` and ships it to the API.
+
+---
+
 ## 2026-09-25 — M1 (step 5) — Detection engine core and first two rules (PR #6)
 
 **What**
