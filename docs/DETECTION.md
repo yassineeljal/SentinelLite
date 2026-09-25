@@ -54,7 +54,7 @@ engine rather than plain `re`.
   agent catching up after an outage, or a replayed dataset, behaves like live traffic.
 - **Sliding, inclusive window.** An event is counted against `[ts - window, ts]`, bounds included.
 - **Idempotent.** Re-adding the same event id changes nothing (replays do not double count), and
-  alert ids are deterministic (`sha256(rule | group | ts)` or `sha256(rule | event)`), so a replay
+  alert ids are deterministic (`sha256(rule | group | triggering event)`), so a replay
   cannot duplicate an alert downstream.
 - **Cooldown** is also in event time: after an alert at time `t`, further hits with
   `ts < t + cooldown` for the same group are suppressed (late events with `ts < t` included).
@@ -62,7 +62,7 @@ engine rather than plain `re`.
   event inside the tolerance still counts against its own window. An event older than that is
   dropped on arrival: it counts for nothing and never alerts. Consequence: logs replayed more than
   30 s out of order across a window boundary can be missed.
-- **Group keys** (per agent unless `scope: global`) are hashed (SHA-256) before use in a Redis key: group values such as user names are
+- **Group keys** (per agent unless `scope: global`) are hashed (SHA-256, length-prefixed so that no two different tuples encode alike) before use in a Redis key: group values such as user names are
   attacker-controlled and unbounded. The alert keeps a copy of each group value (≤ 256 chars).
 - **Events that lack a group field** (e.g. a login whose source IP could not be parsed) are skipped
   by rules grouping on that field: they cannot be attributed.
@@ -80,6 +80,14 @@ engine rather than plain `re`.
     (framing), cannot disturb their windows, and cannot occupy their alert ids. Use
     `scope: global` only for rules that must correlate hosts, e.g. one source spraying many
     machines; such rules share state across agents and rely on the timestamp clamp above.
+    Even so, a forged event can start a `global` rule's cooldown (it must first reach the threshold,
+    which raises an alert, so the activity is visible but its evidence is forged): use `global`
+    sparingly. No shipped rule uses it yet; a cross-host spraying rule with multi-agent scenarios is
+    planned for M2. Until then, one source spreading failures thinly over several hosts is not
+    caught by `ssh-bruteforce`, which counts per agent.
+  - **Invariant**: `MAX_FUTURE_SKEW` (5 s) must stay below the store's late tolerance (30 s), so
+    that a date accepted within the skew can never evict an event still inside any window's
+    tolerance. A test enforces it.
 - **Evidence** is the list of event ids in the window, newest first, capped at 50 (`match_count`
   still reports the true count).
 - **State store.** `RedisWindowStore` keeps one sorted set per (rule, group) and evaluates each
@@ -124,7 +132,7 @@ for the final report.
   problem. After editing rules: `docker compose restart detector`. Hot reload is not implemented.
 - **At-least-once, without lost or duplicate alerts.** If the worker crashes after evaluating but
   before persisting, the entries are redelivered. Window state is idempotent per event, alert ids
-  are deterministic (threshold: rule + group + time; match: rule + event), inserts ignore
+  are deterministic (rule + group + triggering event), inserts ignore
   duplicates, and the event that raised an alert is allowed to raise it again during the cooldown.
   Every other event of the cooldown stays suppressed. Tested with a real crash simulation.
 - **Failure handling.** A Redis/Postgres error leaves the batch pending and it is retried. A bug in

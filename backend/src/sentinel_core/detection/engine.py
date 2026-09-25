@@ -63,7 +63,9 @@ class _CompiledRule:
 
 
 def _digest(*parts: str) -> str:
-    return sha256("\x1f".join(parts).encode()).hexdigest()
+    # Length-prefixed, so that no two different tuples of parts can encode to the same bytes:
+    # the parts are attacker-controlled and may contain any separator character.
+    return sha256("".join(f"{len(part)}:{part}" for part in parts).encode()).hexdigest()
 
 
 def _group_digest(rule: Rule, event: Event, group: list[str]) -> str:
@@ -142,7 +144,9 @@ class DetectionEngine:
             event,
             ts,
             group,
-            _digest(rule.id, digest, str(ts_ms)),
+            # The trigger event, not its time: the effective time can be the server receipt time
+            # (clamped), which is new on every retry of the same batch by the agent.
+            _digest(rule.id, digest, event.event_id),
             result.evidence,
             result.count,
         )

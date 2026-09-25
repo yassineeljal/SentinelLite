@@ -8,8 +8,10 @@ Every character that is not plainly printable is replaced by a visible escape.
 
 
 def sanitize(text: str | None) -> str:
-    """`text` with control, format (e.g. bidi override) and unassigned characters escaped."""
-    if text is None:
+    """`text` with control, format (e.g. bidi override) and unassigned characters escaped.
+
+    None and the empty string are shown as "-" so that table columns never look shifted."""
+    if not text:
         return "-"
     return "".join(ch if ch.isprintable() else _escape(ord(ch)) for ch in text)
 
