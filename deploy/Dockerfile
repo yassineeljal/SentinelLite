@@ -19,6 +19,8 @@ FROM python:3.12-slim
 RUN useradd --system --uid 10001 --no-create-home sentinel
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
+COPY backend/alembic.ini ./alembic.ini
+COPY backend/migrations ./migrations
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1
 USER sentinel
 EXPOSE 8000

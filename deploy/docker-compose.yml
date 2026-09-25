@@ -1,5 +1,12 @@
 name: sentinellite
 
+x-app-build: &app-build
+  context: ..
+  dockerfile: deploy/Dockerfile
+
+x-database-url: &database-url
+  SENTINEL_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-sentinel}
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -28,19 +35,28 @@ services:
       retries: 10
     restart: unless-stopped
 
-  api:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
+  # One-shot job: applies database migrations, then exits. The API waits for it.
+  migrate:
+    build: *app-build
+    command: ["alembic", "upgrade", "head"]
     environment:
-      SENTINEL_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-sentinel}
+      <<: *database-url
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: *app-build
+    environment:
+      <<: *database-url
       SENTINEL_REDIS_URL: redis://redis:6379/0
       SENTINEL_RESPONDER_MODE: ${SENTINEL_RESPONDER_MODE:-dry_run}
     ports:
       - "${SENTINEL_BIND_ADDR:-127.0.0.1}:8000:8000"
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     healthcheck:
