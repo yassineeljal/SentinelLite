@@ -13,6 +13,44 @@ Entry template:
 
 ---
 
+## 2026-09-24 — M1 (step 2) — Ingestion API and raw log stream (PR #3)
+
+**What**
+- `POST /v1/ingest` (`api/ingest.py`): authenticated batches of raw lines → `RawLog` → Redis Stream `events.raw`. Contract documented in [`INGESTION_API.md`](INGESTION_API.md).
+- Agent keys (`auth/agent_keys.py`): `Bearer <uuid>.<256-bit secret>`, only the SHA-256 is stored, constant-time comparison, one generic `401` for every failure, `AgentRepository` protocol with a fail-closed `DenyAllAgentRepository` default.
+- Bus (`bus/raw_stream.py`): `RedisRawLogPublisher` (one entry per line, batch in `MULTI/EXEC`, high watermark → `BusFull` → `429`, Redis errors → `BusUnavailable` → `503`).
+- `BodySizeLimitMiddleware`: 413 on declared `Content-Length` and on chunked bodies, enforced before FastAPI buffers the body.
+- `create_app()` is now a factory with injectable dependencies; the container starts it with `uvicorn --factory`.
+- CI runs a Redis service container so the integration tests run there too.
+- ARCHITECTURE: §5 backpressure text corrected, ADRs 14–16 added.
+
+**Why**
+Ingestion is the trust boundary of the whole product: everything after it assumes events come from an authenticated agent and were bounded in size. Getting auth, limits and idempotency right here is cheaper than retrofitting them.
+
+**Design notes**
+- Agent identity comes only from the key. A body carrying `agent_id` is a `422`.
+- Backpressure is explicit (`429`) rather than `MAXLEN` trimming, which would silently lose unprocessed events (ADR 14). Consequence for the next step: the normalizer must delete entries after acknowledging them, or the watermark will eventually block ingestion.
+- `received_at` uses the server clock; agent clocks are never trusted.
+
+**How verified**
+- 56 tests: 52 unit (auth parsing, every rejection path, no agent-id enumeration, batch/line limits, 429/503 mapping, both body-size paths, fail-closed default) + 4 integration against a real Redis (round trip, watermark writes nothing, exact watermark accepted, unreachable Redis → `BusUnavailable`). Integration run locally with a throw-away `redis:7-alpine` container (see the docstring in `tests/bus/test_raw_stream_integration.py`).
+- `ruff`, `mypy --strict` clean.
+- Smoke test on the rebuilt compose stack: `/healthz` 200; ingest without key → 401; ingest with a well-formed but unregistered key → 401; 9 MB body → 413; nothing written to `events.raw`.
+
+**Problems & lessons**
+- A module-level `app = create_app()` failed at import because settings need `SENTINEL_DATABASE_URL`. Replaced by an app factory (`--factory`): no side effects at import time.
+- FastAPI turns any non-HTTP exception raised while reading the body into a generic `400`, so the streaming size guard raises `HTTPException(413)` (which FastAPI re-raises untouched) instead of a custom exception.
+- redis-py return types are `Optional` for mypy; tests assert non-None rather than silencing the type checker.
+
+**Not done yet / limits**
+- No persistent agent registry: in the compose stack every ingest request is `401` by design until the next step adds it.
+- No per-agent rate limiting; no `GET /v1/agents/me/actions` yet.
+- The normalizer worker that consumes `events.raw` does not exist yet, so accepted lines just accumulate in the stream (not a problem for a dev stack; the watermark bounds it).
+
+**Next**: Postgres agent registry (`agents` table, Alembic migration, CLI to create/revoke agents), then the normalizer worker.
+
+---
+
 ## 2026-09-24 — M1 (step 1) — Common event schema and Linux auth.log normalizer (PR #2)
 
 **What**

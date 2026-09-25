@@ -101,7 +101,8 @@ The workers share **one Python package** (`sentinel_core`) with different entry 
 ### Guarantees
 
 - **At-least-once** everywhere (Redis consumer groups + `XACK` after processing). Idempotency comes from a deterministic `event_id` (hash of `agent_id + source + offset/line`) with a `UNIQUE` constraint.
-- **Backpressure**: streams have a max length (`MAXLEN ~`); if a stream is saturated the API answers `429` + `Retry-After` and the agent retries from its disk buffer.
+- **Backpressure**: `events.raw` has a high watermark (default 100 000 entries). Above it the API answers `429` + `Retry-After` and the agent retries from its disk buffer. The stream is deliberately **not** trimmed with `MAXLEN`: that would silently drop events that were never processed (ADR 14). Consumers delete entries after acknowledging them.
+- **Ingestion contract**: see [`INGESTION_API.md`](INGESTION_API.md) (authentication, limits, status codes).
 - **Pull for actions**: no inbound connection to monitored machines, no port open on the agent side.
 
 ## 6. Common event schema
@@ -277,6 +278,9 @@ SentinelLite/
 | 11 | **UTM + arm64 guests everywhere** | VirtualBox, Proxmox, x86 emulation | Native speed on Apple Silicon; emulated x86 would be too slow. |
 | 12 | **Discord** as first notification channel | Email, Slack | Simple webhook, instant to demo; notifier is an interface. |
 | 13 | **English everywhere** | French docs | Portfolio/recruiter audience; consistency with code. |
+| 14 | **Explicit backpressure** (high watermark → `429`), one stream entry per line, atomic batch write | `MAXLEN` trimming, one entry per batch | Trimming loses unprocessed events without any signal; per-line entries let consumer-group members share work; `MULTI/EXEC` makes a batch all-or-nothing so agent retries stay idempotent. |
+| 15 | **Agent key = `Bearer <uuid>.<256-bit secret>`, SHA-256 stored, constant-time compare, one generic 401** | Argon2/bcrypt for keys, mTLS, JWT for agents | The secret is random, so a slow hash adds nothing; a single 401 avoids agent-id enumeration; identity comes from the key, never from the body. mTLS remains an option for production hardening. |
+| 16 | **Fail closed** when no agent registry is configured; app built by a factory (`create_app`) with injectable dependencies | Module-level app singleton, permissive default | Safe default for a security product; no side effects at import time; tests inject fakes, integration tests use real Redis. |
 
 ## 14. Roadmap (vertical slices)
 
