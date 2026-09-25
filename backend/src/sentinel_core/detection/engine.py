@@ -11,10 +11,13 @@ from sentinel_core.detection.rules import Rule
 from sentinel_core.detection.store import WindowStore
 from sentinel_core.schema.event import Event
 
-# An agent controls the timestamps in its lines. A timestamp further in the future than this
-# (relative to the server-side receipt time) is replaced by the receipt time, so a forged
-# far-future date can neither drag a window away from real events nor hide an attack.
-MAX_FUTURE_SKEW = timedelta(minutes=5)
+# An agent controls the timestamps in its lines. The age of a window is measured from its NEWEST
+# entry, so a date far ahead would push the window away from real events and get them discarded
+# as "too late". Dates ahead of the server-side receipt time by more than this small skew are
+# replaced by the receipt time. It must stay well below window + tolerance, otherwise a forged
+# date could still hide real events (see DETECTION.md, "Forged timestamps"). A host whose clock
+# runs ahead by more than this is simply dated by the server.
+MAX_FUTURE_SKEW = timedelta(seconds=5)
 MAX_GROUP_VALUE_LENGTH = 256
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _MS = timedelta(milliseconds=1)
@@ -63,6 +66,13 @@ def _digest(*parts: str) -> str:
     return sha256("\x1f".join(parts).encode()).hexdigest()
 
 
+def _group_digest(rule: Rule, event: Event, group: list[str]) -> str:
+    """Identity of the state a group's events are counted in (hashed: values are untrusted)."""
+    if rule.scope == "agent":
+        return _digest(str(event.agent_id), *group)
+    return _digest(*group)
+
+
 class DetectionEngine:
     def __init__(self, rules: Sequence[Rule], store: WindowStore) -> None:
         self._rules = [_CompiledRule(rule) for rule in rules if rule.enabled]
@@ -96,7 +106,7 @@ class DetectionEngine:
             return None
         if rule.cooldown_seconds > 0:
             allowed = await self._store.acquire_cooldown(
-                f"mat:{rule.id}:{_digest(*group)}",
+                f"mat:{rule.id}:{_group_digest(rule, event, group)}",
                 _to_ms(ts),
                 rule.cooldown_seconds * 1000,
                 event.event_id,
@@ -115,7 +125,7 @@ class DetectionEngine:
         group = compiled.group_values(event)
         if group is None:
             return None
-        digest = _digest(*group)  # group values are attacker-controlled: hash them for the key
+        digest = _group_digest(rule, event, group)
         ts_ms = _to_ms(ts)
         result = await self._store.record_and_check(
             f"thr:{rule.id}:{digest}",

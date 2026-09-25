@@ -200,3 +200,13 @@ def test_the_rules_shipped_with_the_project_are_valid() -> None:
     rules = load_rules(REPO_ROOT / "rules")
 
     assert {rule.id for rule in rules} >= {"ssh-bruteforce", "ssh-root-login"}
+
+
+def test_scope_defaults_to_agent_and_accepts_global() -> None:
+    assert parse_rule_yaml(THRESHOLD_RULE).scope == "agent"
+    assert parse_rule_yaml(THRESHOLD_RULE + "scope: global\n").scope == "global"
+
+
+def test_scope_rejects_unknown_values() -> None:
+    with pytest.raises(RuleLoadError):
+        parse_rule_yaml(THRESHOLD_RULE + "scope: everyone\n")

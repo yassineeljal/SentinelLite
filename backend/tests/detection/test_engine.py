@@ -9,6 +9,7 @@ from sentinel_core.detection.store import InMemoryWindowStore
 from sentinel_core.schema.event import Action, Category, Event, Outcome, Source
 
 AGENT = UUID("11111111-1111-1111-1111-111111111111")
+AGENT_B = UUID("22222222-2222-2222-2222-222222222222")
 T0 = datetime(2026, 9, 24, 15, 0, 0, tzinfo=UTC)
 
 
@@ -21,13 +22,14 @@ def make_event(
     user: str | None = "root",
     received_at: datetime | None = None,
     extra: dict[str, Any] | None = None,
+    agent: UUID = AGENT,
 ) -> Event:
     ts = T0 + timedelta(seconds=at)
     return Event(
         event_id=f"{n:064x}",
         ts=ts,
         received_at=received_at or ts + timedelta(seconds=1),
-        agent_id=AGENT,
+        agent_id=agent,
         host="ubuntu-01",
         source=Source.LINUX_AUTH,
         category=Category.AUTHENTICATION,
@@ -234,3 +236,77 @@ async def test_redelivered_trigger_re_raises_the_same_alert_and_nothing_else() -
     assert [a.alert_id for a in second_pass] == [
         first_pass[0].alert_id
     ]  # same id: no duplicate row
+
+
+# --- Isolation between agents and forged timestamps (security review of M1) -----------------
+#
+# An agent controls the lines it sends: the source IP and the timestamp inside them. Its key
+# sits on a monitored host, so a compromised host must not be able to blind or frame the rest.
+
+
+async def test_by_default_a_rule_counts_each_agent_separately() -> None:
+    eng = engine(brute_force_rule())  # scope defaults to "agent"
+
+    # Four failures reported by agent A and one by agent B for the same source IP: nobody saw five.
+    for i in range(4):
+        assert await eng.evaluate(make_event(i, at=i, agent=AGENT)) == []
+    assert await eng.evaluate(make_event(100, at=5, agent=AGENT_B)) == []
+
+
+async def test_a_compromised_agent_cannot_frame_an_ip_seen_by_another_agent() -> None:
+    eng = engine(brute_force_rule())
+    for i in range(4):  # forged failures "from" a victim IP, claimed by agent A
+        await eng.evaluate(make_event(i, at=i, agent=AGENT, src_ip="192.0.2.10"))
+
+    # Agent B honestly saw a single failed login from that IP: still no alert.
+    assert await eng.evaluate(make_event(100, at=5, agent=AGENT_B, src_ip="192.0.2.10")) == []
+
+
+async def test_global_scope_correlates_across_agents() -> None:
+    eng = engine(brute_force_rule(id="spraying", scope="global"))
+    alerts = []
+    for i in range(5):  # a password-spraying source hitting five different hosts once each
+        alerts += await eng.evaluate(make_event(i, at=i, agent=UUID(int=i + 10)))
+
+    assert len(alerts) == 1
+    assert alerts[0].match_count == 5
+
+
+async def test_alert_ids_of_different_agents_never_collide() -> None:
+    a, b = engine(brute_force_rule()), engine(brute_force_rule())
+    ids = []
+    for eng, agent, base in [(a, AGENT, 0), (b, AGENT_B, 100)]:
+        for i in range(5):
+            found = await eng.evaluate(make_event(base + i, at=i, agent=agent))
+            ids += [alert.alert_id for alert in found]
+
+    assert len(ids) == 2 and ids[0] != ids[1]  # same rule, group and time, different agents
+
+
+async def test_the_review_exploit_cannot_blind_detection_across_agents() -> None:
+    """Reproduces the attack from the security review: agent A (compromised) sends a line dated
+    ~5 minutes ahead for the attacker's IP, hoping to push the window away so that the real
+    failures reported by agent B are discarded as 'too late'."""
+    for scope in ("agent", "global"):
+        eng = engine(brute_force_rule(scope=scope))
+        received = T0 + timedelta(seconds=10)
+        forged = make_event(900, at=299, agent=AGENT, received_at=received)
+        await eng.evaluate(forged)
+
+        alerts = []
+        for i in range(5):  # the real attack, seen by agent B
+            alerts += await eng.evaluate(make_event(i, at=i, agent=AGENT_B))
+
+        assert len(alerts) == 1, f"attack went undetected with scope={scope}"
+
+
+async def test_future_dates_are_kept_within_the_small_skew_and_clamped_beyond() -> None:
+    eng = engine(root_login_rule(group_by=[], cooldown="0s"))
+    received = T0 + timedelta(seconds=10)
+    ok = Action.LOGIN_SUCCESS
+
+    within = await eng.evaluate(make_event(1, action=ok, at=15, received_at=received))  # +5 s
+    beyond = await eng.evaluate(make_event(2, action=ok, at=16, received_at=received))  # +6 s
+
+    assert within[0].ts == T0 + timedelta(seconds=15)
+    assert beyond[0].ts == received  # replaced by the server-side receipt time

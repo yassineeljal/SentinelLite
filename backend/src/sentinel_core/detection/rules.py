@@ -99,6 +99,11 @@ class Rule(BaseModel):
     group_by: list[str] = Field(default_factory=list)
     threshold: ThresholdSpec | None = None
     cooldown_seconds: Duration = Field(default=0, alias="cooldown", ge=0)
+    # Whose events are counted together. "agent" (default): each agent has its own state, so a
+    # compromised agent can neither frame an IP nor disturb what other agents report. "global":
+    # events of all agents are correlated (e.g. one source spraying many hosts); use it only for
+    # rules that need it, because agents then share state.
+    scope: Literal["agent", "global"] = "agent"
     enabled: bool = True
 
     @classmethod
