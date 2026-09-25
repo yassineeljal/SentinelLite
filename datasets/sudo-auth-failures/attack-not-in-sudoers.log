@@ -1,0 +1,18 @@
+# expect: 1
+# description: A user who is not in sudoers keeps trying: four refusals in eight minutes, one alert (cooldown).
+2026-09-24T10:00:00+00:00 prod-web-01 sudo: pam_unix(sudo:auth): authentication failure; logname=intern uid=1001 euid=0 tty=/dev/pts/0 ruser=intern rhost=  user=intern
+2026-09-24T10:00:00+00:00 prod-web-01 sudo: pam_unix(sudo:auth): conversation failed
+2026-09-24T10:00:00+00:00 prod-web-01 sudo: pam_unix(sudo:auth): auth could not identify password for [intern]
+2026-09-24T10:00:00+00:00 prod-web-01 sudo:   intern : user NOT in sudoers ; TTY=pts/0 ; PWD=/home/intern ; USER=root ; COMMAND=/usr/bin/ls /
+2026-09-24T10:02:30+00:00 prod-web-01 sudo: pam_unix(sudo:auth): authentication failure; logname=intern uid=1001 euid=0 tty=/dev/pts/0 ruser=intern rhost=  user=intern
+2026-09-24T10:02:30+00:00 prod-web-01 sudo: pam_unix(sudo:auth): conversation failed
+2026-09-24T10:02:30+00:00 prod-web-01 sudo: pam_unix(sudo:auth): auth could not identify password for [intern]
+2026-09-24T10:02:30+00:00 prod-web-01 sudo:   intern : user NOT in sudoers ; TTY=pts/0 ; PWD=/home/intern ; USER=root ; COMMAND=/usr/bin/ls /
+2026-09-24T10:05:00+00:00 prod-web-01 sudo: pam_unix(sudo:auth): authentication failure; logname=intern uid=1001 euid=0 tty=/dev/pts/0 ruser=intern rhost=  user=intern
+2026-09-24T10:05:00+00:00 prod-web-01 sudo: pam_unix(sudo:auth): conversation failed
+2026-09-24T10:05:00+00:00 prod-web-01 sudo: pam_unix(sudo:auth): auth could not identify password for [intern]
+2026-09-24T10:05:00+00:00 prod-web-01 sudo:   intern : user NOT in sudoers ; TTY=pts/0 ; PWD=/home/intern ; USER=root ; COMMAND=/usr/bin/ls /
+2026-09-24T10:07:30+00:00 prod-web-01 sudo: pam_unix(sudo:auth): authentication failure; logname=intern uid=1001 euid=0 tty=/dev/pts/0 ruser=intern rhost=  user=intern
+2026-09-24T10:07:30+00:00 prod-web-01 sudo: pam_unix(sudo:auth): conversation failed
+2026-09-24T10:07:30+00:00 prod-web-01 sudo: pam_unix(sudo:auth): auth could not identify password for [intern]
+2026-09-24T10:07:30+00:00 prod-web-01 sudo:   intern : user NOT in sudoers ; TTY=pts/0 ; PWD=/home/intern ; USER=root ; COMMAND=/usr/bin/ls /

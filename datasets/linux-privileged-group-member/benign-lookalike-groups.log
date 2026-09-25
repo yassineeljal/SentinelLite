@@ -1,0 +1,12 @@
+# expect: 0
+# description: Groups whose names merely resemble privileged ones are not privileged.
+2026-09-24T10:00:00+00:00 prod-web-01 usermod[3177]: add 'worker1' to group 'sudoers'
+2026-09-24T10:00:00+00:00 prod-web-01 usermod[3180]: add 'worker1' to shadow group 'sudoers'
+2026-09-24T10:00:05+00:00 prod-web-01 usermod[3183]: add 'worker1' to group 'wheelhouse'
+2026-09-24T10:00:05+00:00 prod-web-01 usermod[3186]: add 'worker1' to shadow group 'wheelhouse'
+2026-09-24T10:00:10+00:00 prod-web-01 usermod[3189]: add 'worker1' to group 'rooted'
+2026-09-24T10:00:10+00:00 prod-web-01 usermod[3192]: add 'worker1' to shadow group 'rooted'
+2026-09-24T10:00:15+00:00 prod-web-01 usermod[3195]: add 'worker1' to group 'Sudo'
+2026-09-24T10:00:15+00:00 prod-web-01 usermod[3198]: add 'worker1' to shadow group 'Sudo'
+2026-09-24T10:00:20+00:00 prod-web-01 usermod[3201]: add 'worker1' to group 'docker-users'
+2026-09-24T10:00:20+00:00 prod-web-01 usermod[3204]: add 'worker1' to shadow group 'docker-users'

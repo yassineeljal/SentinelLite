@@ -1,0 +1,10 @@
+# expect: 0
+# description: Ordinary group changes: builders, users, staff, plugdev, adm.
+2026-09-24T10:00:00+00:00 prod-web-01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/sbin/usermod -aG builders worker1
+2026-09-24T10:00:00+00:00 prod-web-01 usermod[3156]: add 'worker1' to group 'builders'
+2026-09-24T10:00:00+00:00 prod-web-01 usermod[3159]: add 'worker1' to shadow group 'builders'
+2026-09-24T10:00:10+00:00 prod-web-01 usermod[3162]: add 'worker1' to group 'users'
+2026-09-24T10:00:10+00:00 prod-web-01 usermod[3165]: add 'worker1' to shadow group 'users'
+2026-09-24T10:00:20+00:00 prod-web-01 gpasswd[3168]: user worker1 added by root to group staff
+2026-09-24T10:00:30+00:00 prod-web-01 gpasswd[3171]: user worker1 added by root to group plugdev
+2026-09-24T10:00:40+00:00 prod-web-01 gpasswd[3174]: user worker1 added by root to group adm

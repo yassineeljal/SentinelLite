@@ -1,0 +1,6 @@
+# expect: 2
+# description: Membership of docker and lxd is root-equivalent: two alerts.
+2026-09-24T10:00:00+00:00 prod-web-01 usermod[3135]: add 'evil' to group 'docker'
+2026-09-24T10:00:00+00:00 prod-web-01 usermod[3138]: add 'evil' to shadow group 'docker'
+2026-09-24T10:00:10+00:00 prod-web-01 usermod[3141]: add 'evil' to group 'lxd'
+2026-09-24T10:00:10+00:00 prod-web-01 usermod[3144]: add 'evil' to shadow group 'lxd'

@@ -1,0 +1,14 @@
+# expect: 0
+# description: Two failures three minutes apart by one user, one by another: below three per user.
+2026-09-24T10:00:00+00:00 prod-web-01 sudo: pam_unix(sudo:auth): authentication failure; logname=alice uid=1001 euid=0 tty=/dev/pts/0 ruser=alice rhost=  user=alice
+2026-09-24T10:00:00+00:00 prod-web-01 sudo: pam_unix(sudo:auth): conversation failed
+2026-09-24T10:00:00+00:00 prod-web-01 sudo: pam_unix(sudo:auth): auth could not identify password for [alice]
+2026-09-24T10:00:00+00:00 prod-web-01 sudo:    alice : 1 incorrect password attempt ; TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/ls /
+2026-09-24T10:03:00+00:00 prod-web-01 sudo: pam_unix(sudo:auth): authentication failure; logname=alice uid=1001 euid=0 tty=/dev/pts/0 ruser=alice rhost=  user=alice
+2026-09-24T10:03:00+00:00 prod-web-01 sudo: pam_unix(sudo:auth): conversation failed
+2026-09-24T10:03:00+00:00 prod-web-01 sudo: pam_unix(sudo:auth): auth could not identify password for [alice]
+2026-09-24T10:03:00+00:00 prod-web-01 sudo:    alice : 1 incorrect password attempt ; TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/ls /
+2026-09-24T10:01:00+00:00 prod-web-01 sudo: pam_unix(sudo:auth): authentication failure; logname=bob uid=1001 euid=0 tty=/dev/pts/0 ruser=bob rhost=  user=bob
+2026-09-24T10:01:00+00:00 prod-web-01 sudo: pam_unix(sudo:auth): conversation failed
+2026-09-24T10:01:00+00:00 prod-web-01 sudo: pam_unix(sudo:auth): auth could not identify password for [bob]
+2026-09-24T10:01:00+00:00 prod-web-01 sudo:      bob : 1 incorrect password attempt ; TTY=pts/0 ; PWD=/home/bob ; USER=root ; COMMAND=/usr/bin/ls /

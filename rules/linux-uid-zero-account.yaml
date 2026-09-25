@@ -1,0 +1,12 @@
+id: linux-uid-zero-account
+title: Account created with UID 0
+description: >
+  An account was created with UID 0 (useradd -o -u 0): a second root, whatever its name or shell.
+  There is no legitimate reason to do this on an ordinary server.
+mitre: [T1136.001]
+severity: 95
+type: match
+match:
+  source: linux.auth
+  action: account_created
+  extra.uid: 0

@@ -1,0 +1,26 @@
+# expect: 0
+# description: Six users each fail once at the same moment: counted per user.
+2026-09-24T10:00:00+00:00 prod-web-01 sudo: pam_unix(sudo:auth): authentication failure; logname=user0 uid=1001 euid=0 tty=/dev/pts/0 ruser=user0 rhost=  user=user0
+2026-09-24T10:00:00+00:00 prod-web-01 sudo: pam_unix(sudo:auth): conversation failed
+2026-09-24T10:00:00+00:00 prod-web-01 sudo: pam_unix(sudo:auth): auth could not identify password for [user0]
+2026-09-24T10:00:00+00:00 prod-web-01 sudo:    user0 : 1 incorrect password attempt ; TTY=pts/0 ; PWD=/home/user0 ; USER=root ; COMMAND=/usr/bin/ls /
+2026-09-24T10:00:01+00:00 prod-web-01 sudo: pam_unix(sudo:auth): authentication failure; logname=user1 uid=1001 euid=0 tty=/dev/pts/0 ruser=user1 rhost=  user=user1
+2026-09-24T10:00:01+00:00 prod-web-01 sudo: pam_unix(sudo:auth): conversation failed
+2026-09-24T10:00:01+00:00 prod-web-01 sudo: pam_unix(sudo:auth): auth could not identify password for [user1]
+2026-09-24T10:00:01+00:00 prod-web-01 sudo:    user1 : 1 incorrect password attempt ; TTY=pts/0 ; PWD=/home/user1 ; USER=root ; COMMAND=/usr/bin/ls /
+2026-09-24T10:00:02+00:00 prod-web-01 sudo: pam_unix(sudo:auth): authentication failure; logname=user2 uid=1001 euid=0 tty=/dev/pts/0 ruser=user2 rhost=  user=user2
+2026-09-24T10:00:02+00:00 prod-web-01 sudo: pam_unix(sudo:auth): conversation failed
+2026-09-24T10:00:02+00:00 prod-web-01 sudo: pam_unix(sudo:auth): auth could not identify password for [user2]
+2026-09-24T10:00:02+00:00 prod-web-01 sudo:    user2 : 1 incorrect password attempt ; TTY=pts/0 ; PWD=/home/user2 ; USER=root ; COMMAND=/usr/bin/ls /
+2026-09-24T10:00:03+00:00 prod-web-01 sudo: pam_unix(sudo:auth): authentication failure; logname=user3 uid=1001 euid=0 tty=/dev/pts/0 ruser=user3 rhost=  user=user3
+2026-09-24T10:00:03+00:00 prod-web-01 sudo: pam_unix(sudo:auth): conversation failed
+2026-09-24T10:00:03+00:00 prod-web-01 sudo: pam_unix(sudo:auth): auth could not identify password for [user3]
+2026-09-24T10:00:03+00:00 prod-web-01 sudo:    user3 : 1 incorrect password attempt ; TTY=pts/0 ; PWD=/home/user3 ; USER=root ; COMMAND=/usr/bin/ls /
+2026-09-24T10:00:04+00:00 prod-web-01 sudo: pam_unix(sudo:auth): authentication failure; logname=user4 uid=1001 euid=0 tty=/dev/pts/0 ruser=user4 rhost=  user=user4
+2026-09-24T10:00:04+00:00 prod-web-01 sudo: pam_unix(sudo:auth): conversation failed
+2026-09-24T10:00:04+00:00 prod-web-01 sudo: pam_unix(sudo:auth): auth could not identify password for [user4]
+2026-09-24T10:00:04+00:00 prod-web-01 sudo:    user4 : 1 incorrect password attempt ; TTY=pts/0 ; PWD=/home/user4 ; USER=root ; COMMAND=/usr/bin/ls /
+2026-09-24T10:00:05+00:00 prod-web-01 sudo: pam_unix(sudo:auth): authentication failure; logname=user5 uid=1001 euid=0 tty=/dev/pts/0 ruser=user5 rhost=  user=user5
+2026-09-24T10:00:05+00:00 prod-web-01 sudo: pam_unix(sudo:auth): conversation failed
+2026-09-24T10:00:05+00:00 prod-web-01 sudo: pam_unix(sudo:auth): auth could not identify password for [user5]
+2026-09-24T10:00:05+00:00 prod-web-01 sudo:    user5 : 1 incorrect password attempt ; TTY=pts/0 ; PWD=/home/user5 ; USER=root ; COMMAND=/usr/bin/ls /

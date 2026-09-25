@@ -1,0 +1,4 @@
+# expect: 1
+# description: gpasswd adds an account to the sudo group.
+2026-09-24T10:00:00+00:00 prod-web-01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/gpasswd -a worker1 sudo
+2026-09-24T10:00:00+00:00 prod-web-01 gpasswd[3123]: user worker1 added by root to group sudo

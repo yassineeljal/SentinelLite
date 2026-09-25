@@ -1,0 +1,4 @@
+# expect: 2
+# description: Two users each open a root shell at the same time: counted per user.
+2026-09-24T10:00:00+00:00 prod-web-01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/bin/bash
+2026-09-24T10:00:01+00:00 prod-web-01 sudo:      bob : TTY=pts/0 ; PWD=/home/bob ; USER=root ; COMMAND=/bin/bash

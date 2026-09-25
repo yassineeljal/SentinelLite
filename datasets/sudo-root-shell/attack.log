@@ -1,0 +1,3 @@
+# expect: 1
+# description: sudo -i: the logged command is a bare shell, the directory is /root.
+2026-09-24T10:00:00+00:00 prod-web-01 sudo:    alice : TTY=pts/0 ; PWD=/root ; USER=root ; COMMAND=/bin/bash

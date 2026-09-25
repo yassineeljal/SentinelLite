@@ -1,0 +1,5 @@
+# expect: 1
+# description: A system-range account (useradd -r) that keeps a login shell is not a service account.
+2026-09-24T10:00:00+00:00 prod-web-01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/sbin/useradd -r -m svcbackdoor
+2026-09-24T10:00:00+00:00 prod-web-01 useradd[3033]: new group: name=svcbackdoor, GID=997
+2026-09-24T10:00:00+00:00 prod-web-01 useradd[3036]: new user: name=svcbackdoor, UID=997, GID=997, home=/home/svcbackdoor, shell=/bin/sh, from=none

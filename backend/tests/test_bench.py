@@ -24,6 +24,16 @@ def write(directory: Path, rule: str, name: str, body: str) -> None:
 
 
 @pytest.fixture
+def rules_dir(tmp_path: Path) -> Path:
+    """The two rules the test datasets cover (the repository rules change, these tests must not)."""
+    directory = tmp_path / "rules"
+    directory.mkdir()
+    for name in ("ssh-bruteforce.yaml", "ssh-root-login.yaml"):
+        (directory / name).write_text((REPO_ROOT / "rules" / name).read_text())
+    return directory
+
+
+@pytest.fixture
 def datasets(tmp_path: Path) -> Path:
     data = tmp_path / "datasets"
     for rule, attack, benign in [
@@ -40,8 +50,10 @@ def datasets(tmp_path: Path) -> Path:
     return data
 
 
-async def test_the_report_counts_detections_and_false_alerts(datasets: Path) -> None:
-    rules = load_rules(REPO_ROOT / "rules")
+async def test_the_report_counts_detections_and_false_alerts(
+    datasets: Path, rules_dir: Path
+) -> None:
+    rules = load_rules(rules_dir)
 
     run = await run_benchmark(rules, datasets)
     report = render_report(run)
@@ -57,8 +69,8 @@ async def test_the_report_counts_detections_and_false_alerts(datasets: Path) -> 
     assert "the attack" in report  # descriptions are shown in the scenario table
 
 
-async def test_the_report_is_deterministic(datasets: Path) -> None:
-    rules = load_rules(REPO_ROOT / "rules")
+async def test_the_report_is_deterministic(datasets: Path, rules_dir: Path) -> None:
+    rules = load_rules(rules_dir)
 
     first = render_report(await run_benchmark(rules, datasets))
     second = render_report(await run_benchmark(rules, datasets))
@@ -67,9 +79,9 @@ async def test_the_report_is_deterministic(datasets: Path) -> None:
 
 
 async def test_a_false_positive_and_a_miss_make_the_run_fail_and_are_visible(
-    datasets: Path,
+    datasets: Path, rules_dir: Path
 ) -> None:
-    rules = load_rules(REPO_ROOT / "rules")
+    rules = load_rules(rules_dir)
     write(datasets, "ssh-root-login", "benign-oops.log", f"# expect: 0\n{ROOT_OK}\n")  # rule fires
     write(
         datasets, "ssh-bruteforce", "attack-oops.log", f"# expect: 1\n{FAILED.format(i=1)}\n"
@@ -105,10 +117,10 @@ def test_the_committed_benchmark_report_is_up_to_date() -> None:
 
 
 def test_cli_writes_and_checks_a_report(
-    tmp_path: Path, datasets: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, datasets: Path, rules_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     out = tmp_path / "report.md"
-    common = ["bench", "--rules", str(REPO_ROOT / "rules"), "--datasets", str(datasets)]
+    common = ["bench", "--rules", str(rules_dir), "--datasets", str(datasets)]
 
     assert cli.main([*common, "--output", str(out)]) == 0
     assert "# Detection benchmark" in out.read_text()
@@ -121,11 +133,11 @@ def test_cli_writes_and_checks_a_report(
 
 
 def test_cli_prints_the_report_and_exits_1_when_a_scenario_fails(
-    tmp_path: Path, datasets: Path, capsys: pytest.CaptureFixture[str]
+    datasets: Path, rules_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     write(datasets, "ssh-bruteforce", "attack-oops.log", f"# expect: 1\n{FAILED.format(i=1)}\n")
 
-    code = cli.main(["bench", "--rules", str(REPO_ROOT / "rules"), "--datasets", str(datasets)])
+    code = cli.main(["bench", "--rules", str(rules_dir), "--datasets", str(datasets)])
 
     assert code == 1
     assert "❌" in capsys.readouterr().out
@@ -143,8 +155,10 @@ def test_cli_reports_a_broken_dataset_layout_as_an_error(
     assert "needs at least one attack" in capsys.readouterr().err
 
 
-async def test_throughput_is_measured_without_end_to_end_claims(datasets: Path) -> None:
-    rules = load_rules(REPO_ROOT / "rules")
+async def test_throughput_is_measured_without_end_to_end_claims(
+    datasets: Path, rules_dir: Path
+) -> None:
+    rules = load_rules(rules_dir)
 
     result = await measure_throughput(rules, datasets, repeat=3)
 

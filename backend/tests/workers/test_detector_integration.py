@@ -18,6 +18,7 @@ from sentinel_core.bus.normalized_stream import RedisNormalizedPublisher
 from sentinel_core.bus.raw_stream import DATA_FIELD, RedisRawLogPublisher
 from sentinel_core.detection.engine import DetectionEngine
 from sentinel_core.detection.rules import load_rules
+from sentinel_core.detection.scenarios import Scenario, discover_scenarios
 from sentinel_core.detection.store import RedisWindowStore
 from sentinel_core.normalizers.base import RawLog
 from sentinel_core.schema.event import Event, Source
@@ -36,6 +37,7 @@ pytestmark = [
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RULES = load_rules(REPO_ROOT / "rules")
+SCENARIOS = discover_scenarios(REPO_ROOT / "datasets", [rule.id for rule in RULES])
 AGENT = UUID("11111111-1111-1111-1111-111111111111")
 NOW = datetime.now(UTC)
 
@@ -164,18 +166,20 @@ def read_scenario(rule_id: str, scenario: str) -> tuple[int, list[str]]:
     return expected, [x for x in lines if x and not x.startswith("#")]
 
 
-@pytest.mark.parametrize("scenario", ["attack", "benign"])
-@pytest.mark.parametrize("rule_id", [rule.id for rule in RULES])
-async def test_shipped_scenarios_raise_the_expected_alerts_through_the_real_pipeline(
-    pipeline: Pipeline, rule_id: str, scenario: str
+@pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: f"{s.rule_id}/{s.name}")
+async def test_every_shipped_scenario_gives_the_expected_alerts_through_the_real_pipeline(
+    pipeline: Pipeline, scenario: Scenario
 ) -> None:
-    expected, lines = read_scenario(rule_id, scenario)
-    await pipeline.send(*[raw(line, f"{scenario}:{i}") for i, line in enumerate(lines)])
+    """All scenarios (attacks, benign traffic, the 2000-line normal day) through Redis, the
+    normalizer, Postgres and the detector: same alerts, per rule, as the in-memory replay."""
+    await pipeline.send(
+        *[raw(line, f"{scenario.name}:{i}") for i, line in enumerate(scenario.lines)]
+    )
 
     await pipeline.pump()
 
-    rows = await pipeline.rows(f"SELECT 1 FROM alerts WHERE rule_id = '{rule_id}'")  # noqa: S608
-    assert len(rows) == expected
+    rows = await pipeline.rows("SELECT rule_id, count(*) AS n FROM alerts GROUP BY rule_id")
+    assert {r.rule_id: r.n for r in rows} == scenario.expected_alerts
 
 
 async def test_an_agent_retrying_a_whole_batch_never_duplicates_alerts(pipeline: Pipeline) -> None:

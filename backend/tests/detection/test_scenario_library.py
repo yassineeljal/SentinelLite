@@ -215,3 +215,16 @@ def test_folders_without_log_files_are_ignored_but_a_misnamed_rule_folder_is_not
     scenario_file(tmp_path, "attack.log", "# expect: 1\nx\n", "ssh-rot-login")  # typo in the id
     with pytest.raises(ScenarioError, match="ssh-rot-login"):
         discover_scenarios(tmp_path, ["ssh-root-login"])
+
+
+def test_expected_alerts_combine_the_owner_and_the_declared_others(tmp_path: Path) -> None:
+    attack = parse_scenario(
+        scenario_file(tmp_path, "attack.log", "# expect: 2\n# also: other=1, none=0\nx\n"),
+        "ssh-root-login",
+    )
+    benign = parse_scenario(
+        scenario_file(tmp_path, "benign.log", "# expect: 0\nx\n"), "ssh-root-login"
+    )
+
+    assert attack.expected_alerts == {"ssh-root-login": 2, "other": 1}
+    assert benign.expected_alerts == {}

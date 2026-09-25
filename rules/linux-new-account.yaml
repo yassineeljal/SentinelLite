@@ -1,0 +1,16 @@
+id: linux-new-account
+title: New login account created
+description: >
+  A local account with a login shell was created (useradd / adduser). Every such account deserves a
+  review: attackers create accounts to keep access. Accounts whose shell is nologin or false (the
+  service accounts that package installs create) are left out to avoid one alert per `apt install`;
+  this is a known blind spot, a backdoor account with a nologin shell is not reported (an account
+  with UID 0 is, by linux-uid-zero-account, whatever its shell).
+mitre: [T1136.001]
+severity: 50
+type: match
+match:
+  source: linux.auth
+  action: account_created
+exclude:
+  extra.shell: [/usr/sbin/nologin, /sbin/nologin, /bin/false, /usr/bin/false]

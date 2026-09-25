@@ -1,0 +1,5 @@
+# expect: 1
+# also: linux-new-account=1
+# description: A second root account (useradd -o -u 0): the UID 0 rule and the new-account rule both fire.
+2026-09-24T10:00:00+00:00 prod-web-01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/sbin/useradd -o -u 0 -g 0 -M -s /bin/bash toor
+2026-09-24T10:00:00+00:00 prod-web-01 useradd[3093]: new user: name=toor, UID=0, GID=0, home=/home/toor, shell=/bin/bash, from=none

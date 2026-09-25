@@ -13,6 +13,44 @@ Entry template:
 
 ---
 
+## 2026-09-25 — M2 (step 3) — Five Linux privilege and persistence rules (PR #15)
+
+**Housekeeping** — PR #14 (administrative events) was merged into `main` on request; its CI is green.
+
+**What**
+- Five rules, each with attack and benign scenarios: `linux-new-account` (T1136.001), `linux-uid-zero-account` (T1136.001), `linux-privileged-group-member` (T1098.007), `sudo-root-shell` (T1548.003), `sudo-auth-failures` (T1110.001 / T1548.003, threshold 3 failed invocations in 10 min). Seven rules in total.
+- New rule condition **`exclude`** (same syntax as `match`, validated the same way): an event satisfying all the exclusion's conditions is left out. Used to skip the nologin service accounts that package installs create.
+- 27 new scenarios (46 in total), written from **real captured lines** (a real Ubuntu 24.04: `sudo -i/-s/su/su -`, `adduser --system`, `useradd -r`, `useradd -o -u 0`, `usermod`, `gpasswd`), with the three PAM lines that surround each real sudo failure so that they are proven not to count. The generated normal day now includes occasional mistyped sudo passwords (below the threshold).
+- The benchmark test and the real-pipeline test were generalised: the scenario integration test now replays **all 46 scenarios** (including the 2182-line normal day) through Redis, the normalizer, Postgres and the detector, instead of a fixed `attack.log`/`benign.log` pair per rule.
+- Docs: `DETECTION.md` (`exclude`, the five rules and their stated blind spots), `BENCHMARK.md` regenerated, ADR 27.
+
+**Result** — 7 rules, 30 attack scenarios (**30/30 detected**, 46/46 scenarios matching their exact alert counts), 16 benign scenarios with **0 false alerts** on 693 benign events.
+
+**Design notes**
+- **One rule per question.** UID 0 is separate from "new account" because it matters whatever the shell is: it covers the blind spot that the nologin exclusion opens, and the scenario `attack-nologin-shell` proves the two rules interact as intended (only the UID 0 rule fires).
+- **The exclusion is a stated blind spot**, written in the rule's description and in `DETECTION.md`: a backdoor account with a nologin shell is not reported by `linux-new-account`. Cross-rule expectations are declared explicitly (`# also`), so a rule cannot start firing on another rule's scenarios unnoticed.
+- `sudo-root-shell` matches the **exact** command (a shell with no arguments), because the real logs show `sudo -i` / `-s` as `/bin/bash`, `sudo su -` as `/usr/bin/su -`, and `sudo bash -c '…'` with its arguments; a shell for another user (`sudo -u www-data bash`) does not match.
+
+**How verified**
+- 447 tests with real Redis and Postgres (296 pass, 151 skipped without them); ruff and mypy strict clean; the committed benchmark is current.
+- **Six mutation checks, each caught by the scenario written for it** (each restored): no exclusion on `linux-new-account` → the service-account benign scenarios false-alert (and the nologin UID 0 scenario shows an undeclared alert); `sudo-auth-failures` threshold 3 → 2 → the typo scenario false-alerts; removing `/usr/bin/su -` from the shell list → `attack-su-dash` misses; removing `docker` from the groups → `attack-docker-and-lxd` finds 1 of 2; UID 0 rule testing UID 1 → both UID 0 attacks miss; **the sudo parser reverted to a naive first-segment parse → `attack-crafted-directory` misses the root shell** (the property from the previous step, now proven end to end through the rule).
+- **Real stack** (agent on the Ubuntu machine, detector rebuilt with the new rules, 7 rules loaded): real commands raised `linux-new-account` for `mallory`, `linux-privileged-group-member` for `mallory`, `linux-uid-zero-account` for `sysroot` (a **nologin** UID 0 account: the new-account rule correctly stayed silent), `sudo-root-shell` for a shell opened from a **real crafted directory** (`/tmp/x ; USER=nobody ; COMMAND=/bin/ls`: the stored event has `target_user=root`, `command=/bin/bash`, `ambiguous=true`, so the decoy did not hide it) and `sudo-auth-failures` for three real failed invocations; `adduser --system` (`svcq`) and routine `apt-get` raised nothing; 0 dead letters. Replaying the previous captures also raised `linux-new-account` for `toor` and `worker1` but **not** for the nologin service accounts `svcx` / `svcy`.
+
+**Problems & lessons**
+- Adding rules broke six benchmark tests that combined the repository's rules with a two-rule test dataset: they now use their own two-rule directory, so repository changes cannot affect them.
+- A hard-coded `attack.log` / `benign.log` pair in the pipeline integration test silently assumed the first convention; it failed loudly on the new file names (`benign-*.log`) and was rewritten over the scenario library.
+- A helper argument named `shell` tripped the `S604` security lint (which looks for `shell=True`): renamed instead of disabling the rule.
+- My first attempt to read the new alerts filtered on an hour that was still in the future (UTC vs local), and printed nothing; the stack had in fact worked.
+
+**Limits**
+- `sudo-auth-failures` counts failed invocations, not guesses: one invocation with three wrong attempts is a single event.
+- `sudo-root-shell` is noisy by nature on machines where administrators use `sudo -i`; the moderate severity and the per-user cooldown are the mitigation, and the benign normal day contains no root shell, so its false-positive figure does not include that habit.
+- `su`, `passwd` changes and PAM failures outside sudo are still not modelled.
+
+**Next (M2)**: the `distinct` aggregation (user enumeration: many different user names from one source) and the `sequence` rule type (a successful login after repeated failures), then a time-of-day condition.
+
+---
+
 ## 2026-09-25 — M2 (step 2) — Linux administrative events: sudo, useradd, usermod, gpasswd (PR #14)
 
 **What**

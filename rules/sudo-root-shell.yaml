@@ -1,0 +1,29 @@
+id: sudo-root-shell
+title: Interactive root shell through sudo
+description: >
+  A user opened a root shell with sudo (sudo -i, sudo -s, sudo su, sudo bash...): the command logged
+  is a shell with no arguments. Non-interactive uses (sudo bash -c '...') and shells for another
+  user (sudo -u www-data bash) do not match. Administrators do this routinely, so the severity is
+  moderate; the value is the trail. One alert per user and host per minute.
+mitre: [T1548.003]
+severity: 40
+type: match
+match:
+  source: linux.auth
+  action: sudo_command
+  extra.target_user: root
+  extra.command:
+    - /bin/bash
+    - /usr/bin/bash
+    - /bin/sh
+    - /usr/bin/sh
+    - /bin/dash
+    - /usr/bin/dash
+    - /bin/zsh
+    - /usr/bin/zsh
+    - /bin/su
+    - /usr/bin/su
+    - /bin/su -
+    - /usr/bin/su -
+group_by: [user_name, host]
+cooldown: 60s
