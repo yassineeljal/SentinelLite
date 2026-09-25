@@ -92,7 +92,7 @@ The workers share **one Python package** (`sentinel_core`) with different entry 
 
 1. **Agent → API**: `POST /v1/ingest` with a batch (≤ 500 lines or 1 s). Authenticated by an agent key (stored hashed server-side). Returns `202` once the batch is written to Redis.
 2. **API → `events.raw`** (Redis Stream): the raw payload is kept as-is with `agent_id`, `source_type`, `received_at`.
-3. **Normalizer** (consumer group): parse → normalized event → insert into PostgreSQL → publish to `events.normalized`. Unparsable line → `events_dead_letter` (never silently dropped).
+3. **Normalizer** (consumer group `normalizers`): parse → normalized event → insert into PostgreSQL (`events`, daily partitions) → acknowledge and delete the stream entry. Unparsable lines and sources without a normalizer go to `events_dead_letter` with the reason (never dropped silently). Publishing to `events.normalized` is added together with the detector (next milestone step), so that the stream is never filled without a consumer. See ADR 18.
 4. **Detector**: reads `events.normalized`, applies rules, publishes `alerts.new`.
 5. **Enricher**: adds geo, reputation and risk score → alert persisted → `alerts.enriched`.
 6. **Responder**: if score ≥ threshold and IP not allowlisted → block action.
@@ -282,6 +282,7 @@ SentinelLite/
 | 15 | **Agent key = `Bearer <uuid>.<256-bit secret>`, SHA-256 stored, constant-time compare, one generic 401** | Argon2/bcrypt for keys, mTLS, JWT for agents | The secret is random, so a slow hash adds nothing; a single 401 avoids agent-id enumeration; identity comes from the key, never from the body. mTLS remains an option for production hardening. |
 | 16 | **Fail closed** when no agent registry is configured; app built by a factory (`create_app`) with injectable dependencies | Module-level app singleton, permissive default | Safe default for a security product; no side effects at import time; tests inject fakes, integration tests use real Redis. |
 | 17 | **Alembic migrations run by a one-shot `migrate` compose service**; SQLAlchemy 2 async + asyncpg; named constraints | Auto-create tables at API startup, migrations inside the API entrypoint | The API never needs schema-changing rights at runtime, migrations are explicit and reversible (upgrade/downgrade/upgrade is tested), `alembic check` catches model/migration drift, and several API replicas cannot race to migrate. |
+| 18 | **Normalizer worker: persist first, then ack + delete; idempotent inserts; stale-entry takeover; `events` partitioned by day with a default partition; dead letters keyed by line identity** | Ack before writing, offsets in a separate store, monthly partitions, hashing the whole payload for dedup | Ack-after-persist means a crash redelivers instead of losing events, and `ON CONFLICT DO NOTHING` absorbs the repeat. `XAUTOCLAIM` recovers entries of crashed consumers. Agents control the timestamps in their lines, so a default partition guarantees an odd date never fails an insert; daily partitions are created ahead by the worker (advisory lock: safe with several workers). `ts` is part of the primary key because PostgreSQL requires the partition key in unique constraints. Dead-letter dedup uses the same identity as `event_id` (agent, source, origin), not the payload, because a retried batch gets a new `received_at`. |
 
 ## 14. Roadmap (vertical slices)
 

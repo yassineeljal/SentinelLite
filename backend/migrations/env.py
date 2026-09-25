@@ -1,4 +1,5 @@
 import asyncio
+import re
 from logging.config import fileConfig
 
 from alembic import context
@@ -16,6 +17,17 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+# Daily partitions and the default partition of `events` are created at runtime by the
+# normalizer worker; they are not models, so autogenerate/check must not try to drop them.
+_PARTITION_TABLE = re.compile(r"^events_(default|\d{8})$")
+
+
+def include_object(
+    obj: object, name: str | None, type_: str, reflected: bool, compare_to: object
+) -> bool:
+    return not (type_ == "table" and reflected and name and _PARTITION_TABLE.match(name))
+
+
 def get_url() -> str:
     # An explicit sqlalchemy.url (used by the tests) wins over the environment.
     return config.get_main_option("sqlalchemy.url") or get_settings().database_url
@@ -25,6 +37,7 @@ def run_migrations_offline() -> None:
     context.configure(
         url=get_url(),
         target_metadata=target_metadata,
+        include_object=include_object,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -33,7 +46,9 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection, target_metadata=target_metadata, include_object=include_object
+    )
     with context.begin_transaction():
         context.run_migrations()
 

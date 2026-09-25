@@ -8,61 +8,27 @@ Run locally with, e.g.:
 In CI the URL is provided by a Postgres service container.
 """
 
-import os
-from collections.abc import AsyncGenerator
-from pathlib import Path
 from uuid import UUID
 
 import pytest
 from alembic import command
-from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from sentinel_core import cli
 from sentinel_core.api.main import create_app
 from sentinel_core.auth.agent_keys import hash_secret, parse_bearer_token
 from sentinel_core.auth.registry import AgentNameTaken, PostgresAgentRepository
 from sentinel_core.config import get_settings
-from tests.support import InMemoryPublisher
-
-DATABASE_URL = os.environ.get("SENTINEL_TEST_DATABASE_URL")
+from tests.support import DATABASE_URL, InMemoryPublisher, alembic_config
 
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(DATABASE_URL is None, reason="SENTINEL_TEST_DATABASE_URL not set"),
 ]
 
-BACKEND_DIR = Path(__file__).resolve().parents[2]
 LINE = "2026-09-24T15:04:05+00:00 h sshd[1]: Failed password for root from 203.0.113.7 port 1 ssh2"
-
-
-def alembic_config() -> Config:
-    assert DATABASE_URL is not None
-    config = Config(str(BACKEND_DIR / "alembic.ini"))
-    config.set_main_option("script_location", str(BACKEND_DIR / "migrations"))
-    config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
-    return config
-
-
-@pytest.fixture(scope="session", autouse=True)
-def migrated_database() -> None:
-    """Applies migrations once, proving upgrade -> downgrade -> upgrade works."""
-    config = alembic_config()
-    command.upgrade(config, "head")
-    command.downgrade(config, "base")
-    command.upgrade(config, "head")
-
-
-@pytest.fixture
-async def engine() -> AsyncGenerator[AsyncEngine]:
-    assert DATABASE_URL is not None
-    engine = create_async_engine(DATABASE_URL)
-    async with engine.begin() as conn:
-        await conn.execute(text("TRUNCATE agents"))
-    yield engine
-    await engine.dispose()
 
 
 @pytest.fixture

@@ -1,7 +1,23 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, DateTime, MetaData, String, Uuid, func
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    Identity,
+    Index,
+    Integer,
+    MetaData,
+    SmallInteger,
+    String,
+    Text,
+    Uuid,
+    func,
+    text,
+)
+from sqlalchemy.dialects.postgresql import INET, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # Deterministic constraint names keep Alembic migrations and autogenerate reproducible.
@@ -30,3 +46,53 @@ class Agent(Base):
     key_hash: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
+class EventRecord(Base):
+    """A normalized event. Range-partitioned by day on `ts` (see migration 0002).
+
+    The primary key includes `ts` because PostgreSQL requires the partition key in every unique
+    constraint. Idempotent inserts use ON CONFLICT (event_id, ts).
+    """
+
+    __tablename__ = "events"
+    __table_args__ = (
+        Index("ix_events_ts", "ts"),
+        Index("ix_events_src_ip_ts", "src_ip", "ts"),
+        Index("ix_events_action_ts", "action", "ts"),
+        {"postgresql_partition_by": "RANGE (ts)"},
+    )
+
+    event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    agent_id: Mapped[UUID] = mapped_column(Uuid)
+    source: Mapped[str] = mapped_column(String(32))
+    category: Mapped[str] = mapped_column(String(32))
+    action: Mapped[str] = mapped_column(String(32))
+    outcome: Mapped[str] = mapped_column(String(16))
+    severity: Mapped[int] = mapped_column(SmallInteger)
+    src_ip: Mapped[str | None] = mapped_column(INET, default=None)
+    dst_ip: Mapped[str | None] = mapped_column(INET, default=None)
+    dst_port: Mapped[int | None] = mapped_column(Integer, default=None)
+    host: Mapped[str] = mapped_column(String(255))
+    user_name: Mapped[str | None] = mapped_column(String(256), default=None)
+    raw: Mapped[str] = mapped_column(Text)
+    extra: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+
+
+class DeadLetter(Base):
+    """A stream entry that could not be normalized, kept with the reason (never dropped)."""
+
+    __tablename__ = "events_dead_letter"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    # sha256 of the stream payload: a redelivered entry must not create a second row.
+    dedup_key: Mapped[str] = mapped_column(String(64), unique=True)
+    agent_id: Mapped[UUID | None] = mapped_column(Uuid, default=None)
+    source: Mapped[str | None] = mapped_column(String(32), default=None)
+    origin: Mapped[str | None] = mapped_column(String(128), default=None)
+    raw: Mapped[str] = mapped_column(Text)
+    error: Mapped[str] = mapped_column(String(500))
+    received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
