@@ -1,0 +1,6 @@
+# expect: 1
+# description: Three failures (below the brute-force threshold) then a root success from the same source.
+2026-09-24T15:00:00+00:00 prod-web-01 sshd[2075]: Failed password for root from 203.0.113.8 port 42074 ssh2
+2026-09-24T15:00:02+00:00 prod-web-01 sshd[2076]: Failed password for root from 203.0.113.8 port 42075 ssh2
+2026-09-24T15:00:04+00:00 prod-web-01 sshd[2077]: Failed password for root from 203.0.113.8 port 42076 ssh2
+2026-09-24T15:00:08+00:00 prod-web-01 sshd[2078]: Accepted password for root from 203.0.113.8 port 52077 ssh2

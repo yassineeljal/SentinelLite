@@ -1,4 +1,5 @@
 # expect: 0
+# description: Other users, failed root attempts and look-alike names are not a root login.
 # Other users, failed root attempts and look-alike names are not a root login.
 2026-09-24T15:00:00+00:00 ubuntu-01 sshd[856]: Accepted password for alice from 10.0.0.5 port 4422 ssh2
 2026-09-24T15:01:00+00:00 ubuntu-01 sshd[857]: Failed password for root from 203.0.113.7 port 47000 ssh2

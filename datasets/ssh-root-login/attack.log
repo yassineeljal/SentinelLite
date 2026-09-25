@@ -1,4 +1,5 @@
 # expect: 2
+# description: Root logs in from one IP twice within a minute (one alert), then from another IP.
 # Root logs in from one IP (twice within a minute: ONE alert), then from another IP.
 2026-09-24T15:00:00+00:00 ubuntu-01 sshd[853]: Accepted password for root from 203.0.113.7 port 4422 ssh2
 2026-09-24T15:00:20+00:00 ubuntu-01 sshd[854]: Accepted password for root from 203.0.113.7 port 4422 ssh2

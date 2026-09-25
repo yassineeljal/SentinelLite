@@ -1,0 +1,7 @@
+# expect: 0
+# description: Failed attempts against root, one invalid user, no success: neither rule alerts.
+2026-09-24T15:00:00+00:00 prod-web-01 sshd[2084]: Failed password for root from 203.0.113.9 port 42083 ssh2
+2026-09-24T15:00:03+00:00 prod-web-01 sshd[2085]: Failed password for root from 203.0.113.9 port 42084 ssh2
+2026-09-24T15:00:06+00:00 prod-web-01 sshd[2086]: Failed password for root from 203.0.113.9 port 42085 ssh2
+2026-09-24T15:00:09+00:00 prod-web-01 sshd[2087]: Invalid user oracle from 203.0.113.9 port 4444
+2026-09-24T15:00:10+00:00 prod-web-01 sshd[2088]: Failed password for invalid user oracle from 203.0.113.9 port 42087 ssh2

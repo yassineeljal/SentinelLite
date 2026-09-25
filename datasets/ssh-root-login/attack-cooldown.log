@@ -1,0 +1,5 @@
+# expect: 2
+# description: Root logs in three times: the second login, 30 s after the first from the same source, is suppressed by the 60 s cooldown.
+2026-09-24T15:00:00+00:00 prod-web-01 sshd[2072]: Accepted password for root from 203.0.113.7 port 52071 ssh2
+2026-09-24T15:00:30+00:00 prod-web-01 sshd[2073]: Accepted password for root from 203.0.113.7 port 52072 ssh2
+2026-09-24T15:02:00+00:00 prod-web-01 sshd[2074]: Accepted password for root from 203.0.113.7 port 52073 ssh2

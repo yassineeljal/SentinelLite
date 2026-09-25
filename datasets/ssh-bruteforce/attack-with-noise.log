@@ -1,0 +1,19 @@
+# expect: 1
+# description: An attack interleaved with ordinary traffic (logins, cron, sudo): the noise must not hide it.
+2026-09-24T14:59:30+00:00 prod-web-01 sshd[2028]: Accepted publickey for alice from 10.0.0.5 port 52027 ssh2: ED25519 SHA256:abc123
+2026-09-24T14:59:40+00:00 prod-web-01 CRON[2029]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)
+2026-09-24T15:00:00+00:00 prod-web-01 sshd[2030]: Failed password for root from 203.0.113.62 port 42029 ssh2
+2026-09-24T15:00:01+00:00 prod-web-01 sshd[2031]: Received disconnect from 10.0.0.5 port 51000:11: disconnected by user
+2026-09-24T15:00:02+00:00 prod-web-01 sudo[2032]: alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/apt-get update
+2026-09-24T15:00:03+00:00 prod-web-01 sshd[2033]: Failed password for root from 203.0.113.62 port 42032 ssh2
+2026-09-24T15:00:04+00:00 prod-web-01 sshd[2034]: Received disconnect from 10.0.0.5 port 51000:11: disconnected by user
+2026-09-24T15:00:05+00:00 prod-web-01 sudo[2035]: alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/apt-get update
+2026-09-24T15:00:06+00:00 prod-web-01 sshd[2036]: Failed password for root from 203.0.113.62 port 42035 ssh2
+2026-09-24T15:00:07+00:00 prod-web-01 sshd[2037]: Received disconnect from 10.0.0.5 port 51000:11: disconnected by user
+2026-09-24T15:00:08+00:00 prod-web-01 sudo[2038]: alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/apt-get update
+2026-09-24T15:00:09+00:00 prod-web-01 sshd[2039]: Failed password for root from 203.0.113.62 port 42038 ssh2
+2026-09-24T15:00:10+00:00 prod-web-01 sshd[2040]: Received disconnect from 10.0.0.5 port 51000:11: disconnected by user
+2026-09-24T15:00:11+00:00 prod-web-01 sudo[2041]: alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/apt-get update
+2026-09-24T15:00:12+00:00 prod-web-01 sshd[2042]: Failed password for root from 203.0.113.62 port 42041 ssh2
+2026-09-24T15:00:13+00:00 prod-web-01 sshd[2043]: Received disconnect from 10.0.0.5 port 51000:11: disconnected by user
+2026-09-24T15:00:14+00:00 prod-web-01 sudo[2044]: alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/apt-get update

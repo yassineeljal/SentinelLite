@@ -106,17 +106,40 @@ engine rather than plain `re`.
 ## Adding a rule
 
 1. Write `rules/<id>.yaml`.
-2. Add `datasets/<id>/attack.log` and `datasets/<id>/benign.log`: raw log lines of the rule's
-   source, time-ordered, starting with a `# expect: N` header (the number of alerts this rule must
-   raise on that file). The attack file must expect ≥ 1, the benign file must expect `0`. Benign
-   scenarios should be the traffic most likely to cause false positives (typos, sub-threshold
-   probes, distributed noise, slow guessing).
-3. Run `uv run pytest tests/detection -q`. The build fails if a rule lacks a scenario, if the
-   headers are inconsistent, or if a scenario does not produce exactly the expected alerts.
+2. Add scenarios under `datasets/<id>/`: raw log lines of the rule's source, time-ordered, in files
+   named `attack*.log` and `benign*.log` (at least one of each; several variants are better: boundary
+   cases, IPv6, noise, slow attacks, look-alikes). Each file starts with header comments:
+
+   ```
+   # expect: 2                      required. Attack: alerts the rule must raise (>= 1).
+                                    Benign: 0, and NO rule of the whole set may alert.
+   # also: other-rule=1             optional: alerts other rules legitimately raise on an attack
+   # description: one line          optional, shown in the benchmark report
+   # source: linux.auth             optional (default): which normalizer reads the lines
+   ```
+
+   Any other comment is free text; a header-looking line with an unknown key (`# expet: 2`) is an
+   error, so a typo cannot silently disable a check. Benign scenarios should be the traffic most
+   likely to cause false positives (typos, sub-threshold probes, distributed noise, slow guessing).
+   `datasets/_shared/` holds benign traffic that **every** rule must ignore (e.g. a normal day).
+3. Run `uv run pytest tests/detection -q`, then regenerate the report:
+   `uv run sentinel bench --output ../docs/BENCHMARK.md`. The build fails if a rule lacks a scenario,
+   a header is inconsistent, a scenario does not produce exactly the expected alerts, or
+   `docs/BENCHMARK.md` is out of date.
 4. Note the rule in the table above.
 
-Scenarios are also the seed of the detection benchmark (detection rate / false positives) planned
-for the final report.
+## Benchmark
+
+`sentinel bench` replays every scenario like production does (normalizer, then the engine with **all**
+rules loaded) and reports the detection rate and the false alerts: [`BENCHMARK.md`](BENCHMARK.md)
+(generated, checked by CI). `--throughput` measures the in-memory engine speed (one core; not
+end-to-end, and machine-dependent, so not part of the committed file).
+
+What it shows and does not show: the scenarios are curated by the rule author, so the numbers are a
+**regression measure of the rules**, not an estimate of detection on real traffic. They do show that the
+shipped rules are neither too sensitive nor too lax on the cases we thought of: weakening
+`ssh-bruteforce` (threshold 5 → 3, 5 → 8, window 60 s → 30 s, no cooldown) makes the report fail in
+each case, with a different symptom (false alerts, missed attacks, wrong alert counts).
 
 ## In the stack: the detector worker
 

@@ -13,6 +13,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from sentinel_core import bench
 from sentinel_core.auth.registry import VALID_OS, AgentNameTaken, PostgresAgentRepository
 from sentinel_core.config import get_settings
 from sentinel_core.db.alerts import AmbiguousAlertId, get_alert, list_alerts
@@ -45,6 +46,10 @@ def build_parser() -> argparse.ArgumentParser:
     listing.add_argument("--rule", help="only alerts of this rule id")
     show = alerts.add_parser("show", help="one alert with its evidence and detection latency")
     show.add_argument("alert_id", help="alert id or unambiguous hexadecimal prefix")
+
+    bench.add_arguments(
+        sub.add_parser("bench", help="replay the attack/benign scenarios: detection and FP figures")
+    )
     return parser
 
 
@@ -124,7 +129,10 @@ async def _alerts(args: argparse.Namespace, sessions: async_sessionmaker[AsyncSe
 
 
 def main(argv: list[str] | None = None) -> int:
-    return asyncio.run(_run(build_parser().parse_args(argv)))
+    args = build_parser().parse_args(argv)
+    if args.group == "bench":  # needs neither the database nor the settings
+        return bench.run_command(args)
+    return asyncio.run(_run(args))
 
 
 if __name__ == "__main__":

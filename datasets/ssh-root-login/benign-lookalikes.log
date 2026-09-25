@@ -1,0 +1,7 @@
+# expect: 0
+# description: Accounts whose names merely look like root (root2, toor, rootkit, Root) are not root.
+2026-09-24T15:00:00+00:00 prod-web-01 sshd[2079]: Accepted password for root2 from 10.0.0.30 port 52078 ssh2
+2026-09-24T15:00:10+00:00 prod-web-01 sshd[2080]: Accepted password for toor from 10.0.0.31 port 52079 ssh2
+2026-09-24T15:00:20+00:00 prod-web-01 sshd[2081]: Accepted password for rootkit from 10.0.0.32 port 52080 ssh2
+2026-09-24T15:00:30+00:00 prod-web-01 sshd[2082]: Accepted password for Root from 10.0.0.33 port 52081 ssh2
+2026-09-24T15:00:40+00:00 prod-web-01 sshd[2083]: Accepted password for roots from 10.0.0.34 port 52082 ssh2

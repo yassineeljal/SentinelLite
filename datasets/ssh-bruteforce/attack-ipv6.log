@@ -1,0 +1,8 @@
+# expect: 1
+# description: The same attack from an IPv6 source: the source is tracked in canonical form.
+2026-09-24T15:00:00+00:00 prod-web-01 sshd[2007]: Failed password for root from 2001:db8::7 port 42006 ssh2
+2026-09-24T15:00:02+00:00 prod-web-01 sshd[2008]: Failed password for root from 2001:db8::7 port 42007 ssh2
+2026-09-24T15:00:04+00:00 prod-web-01 sshd[2009]: Failed password for root from 2001:db8::7 port 42008 ssh2
+2026-09-24T15:00:06+00:00 prod-web-01 sshd[2010]: Failed password for root from 2001:db8::7 port 42009 ssh2
+2026-09-24T15:00:08+00:00 prod-web-01 sshd[2011]: Failed password for root from 2001:db8::7 port 42010 ssh2
+2026-09-24T15:00:10+00:00 prod-web-01 sshd[2012]: Failed password for root from 2001:db8::7 port 42011 ssh2
