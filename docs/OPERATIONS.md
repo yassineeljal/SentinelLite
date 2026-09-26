@@ -180,7 +180,7 @@ docker compose logs -f enricher                              # "batch: n enriche
 docker compose exec redis redis-cli xlen alerts.new          # announcements waiting (normally 0)
 docker compose exec redis redis-cli get sl:rep:quota:$(date -u +%Y%m%d)   # AbuseIPDB requests made today
 docker compose exec redis redis-cli get sl:rep:blocked       # set = lookups paused (the value says why)
-docker compose exec api sentinel alerts show <id-prefix>     # the `from` line
+docker compose exec api sentinel alerts show <id-prefix>     # `from`, `abuse` and `risk` lines
 ```
 
 ## Troubleshooting

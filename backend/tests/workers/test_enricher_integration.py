@@ -247,7 +247,7 @@ async def test_a_redelivered_announcement_rewrites_the_same_result(stack: Stack)
     assert len(rows) == 1 and rows[0].enrichment["geo"]["country_code"] == "FR"
 
 
-async def test_an_alert_without_a_source_address_is_left_alone(
+async def test_an_alert_without_a_source_address_is_scored_from_its_severity_alone(
     stack: Stack, engine: AsyncEngine
 ) -> None:
     alert = Alert(
@@ -267,8 +267,10 @@ async def test_an_alert_without_a_source_address_is_left_alone(
     await stack.publisher.publish([alert])
     await stack.pump()
 
-    (row,) = await stack.rows("SELECT enrichment, enriched_at FROM alerts")
-    assert row.enrichment is None and row.enriched_at is None
+    (row,) = await stack.rows("SELECT enrichment, risk_score, risk FROM alerts")
+    assert row.enrichment is None  # nothing to look up
+    assert row.risk_score == 50 and row.risk["level"] == "medium"
+    assert [f["name"] for f in row.risk["factors"]] == ["rule severity"]
     assert await stack.pending() == 0
 
 
@@ -367,11 +369,12 @@ async def test_an_alert_that_cannot_be_enriched_does_not_block_the_others(
     await stack.pump()
 
     rows = {
-        r.ip: r.enrichment
-        for r in await stack.rows("SELECT host(src_ip) AS ip, enrichment FROM alerts")
+        r.ip: r
+        for r in await stack.rows("SELECT host(src_ip) AS ip, enrichment, risk_score FROM alerts")
     }
-    assert rows[UNKNOWN_IP] is None  # left as it is
-    assert rows[PARIS_IP]["geo"]["country_code"] == "FR"
+    assert rows[UNKNOWN_IP].enrichment is None  # no context...
+    assert rows[UNKNOWN_IP].risk_score == 60  # ...but still ranked, from the rule severity
+    assert rows[PARIS_IP].enrichment["geo"]["country_code"] == "FR"
     assert await stack.redis.xlen(stack.alerts_stream) == 0 and await stack.pending() == 0
 
 
@@ -395,12 +398,20 @@ async def test_the_reputation_is_stored_for_public_sources_and_never_asked_for_p
     await stack.pump()
 
     rows = {
-        r.ip: r.enrichment
-        for r in await stack.rows("SELECT host(src_ip) AS ip, enrichment FROM alerts")
+        r.ip: r
+        for r in await stack.rows(
+            "SELECT host(src_ip) AS ip, enrichment, risk_score, risk FROM alerts"
+        )
     }
-    assert rows[PARIS_IP]["reputation"]["score"] == 91
-    assert rows[PARIS_IP]["reputation"]["source"] == "abuseipdb"
-    assert rows["192.168.139.50"]["reputation"] is None
+    assert rows[PARIS_IP].enrichment["reputation"]["score"] == 91
+    assert rows[PARIS_IP].enrichment["reputation"]["source"] == "abuseipdb"
+    assert rows["192.168.139.50"].enrichment["reputation"] is None
+    # ssh-bruteforce is 60; a reputation of 91 adds 22: the score explains itself
+    assert rows[PARIS_IP].risk_score == 82 and rows["192.168.139.50"].risk_score == 60
+    assert {f["name"]: f["points"] for f in rows[PARIS_IP].risk["factors"]} == {
+        "rule severity": 60,
+        "reputation": 22,
+    }
     assert fake.asked == [PARIS_IP]  # the private address never left
 
 

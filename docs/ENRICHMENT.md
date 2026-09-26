@@ -3,7 +3,7 @@
 Context added to an alert **after** it is stored: where the source address is, and which network
 owns it, and how badly it has been reported. Code in `backend/src/sentinel_core/enrichment/` and
 `workers/enricher.py`. Providers: GeoIP (local files) and AbuseIPDB reputation (optional, a web API).
-A risk score combining them comes next (M3).
+A **risk score** combines the rule's severity with this context (below).
 
 ```mermaid
 flowchart LR
@@ -113,6 +113,45 @@ The answer is untrusted: it is parsed strictly (integer score 0-100, non-negativ
 dates), its text is stripped of control characters and truncated, and redirects are never followed
 (the key must not travel to another host). Redis errors are not swallowed: the batch is retried.
 
+## Risk score
+
+Every alert the enricher processes gets a **risk score, 0-100**, stored in `alerts.risk_score`
+(indexed, for sorting) and `alerts.risk` (level and factors). It exists to rank alerts, and it is
+built so that anyone can see and challenge *why*: the rule's severity is the starting point (its
+author's judgement of the behaviour), a few context factors move it, every factor has a name and a
+reason, and the factors always add up to the score.
+
+| Factor | Points | When |
+|---|---|---|
+| rule severity | the rule's `severity` (0-100) | always |
+| reputation | AbuseIPDB abuse confidence ÷ 4, rounded down (0 to +25) | a reputation was fetched and the address is not whitelisted |
+| tor exit | +5 | AbuseIPDB says the source is a Tor exit node |
+| hosting network | +5 | the usage type says data center / hosting |
+| cap | negative | only if the sum exceeds 100 |
+
+Levels: **low** < 40, **medium** 40-69, **high** 70-94, **critical** ≥ 95. Critical is deliberately
+rare: a failed SSH brute force (severity 60) from the worst-reputed Tor exit scores 90, *high*; a
+login that succeeded after failures (severity 85) from a source with a middling reputation is
+critical.
+
+```
+risk    90/100 (high)
+          +60 rule severity: severity 60 set by the rule
+          +25 reputation: AbuseIPDB abuse confidence 100/100 (a quarter of it)
+          +5 tor exit: the source is a Tor exit node
+```
+
+- Alerts **without a source address** (sudo and account rules) or whose enrichment failed still get
+  a score: it equals the rule's severity. So every processed alert can be ranked.
+- **The country is not used**: it says nothing about intent, and scoring by country would be biased
+  and easy to game. `non_public` sources get no adjustment either.
+- **These weights are judgement calls, not measurements.** They are constants in
+  `enrichment/risk.py`, covered by tests that pin the boundaries and the arithmetic; change them
+  there, deliberately. The score has never been calibrated against real incident data.
+- The score is computed by the enricher: with enrichment disabled (the default), alerts have no
+  risk score and only their rule severity.
+- Alerts stored before this feature have no score (`risk    not scored yet`); there is no backfill.
+
 ## Data and licence
 
 Reputation data comes from [AbuseIPDB](https://www.abuseipdb.com) (see their terms for the free
@@ -129,11 +168,11 @@ ignored by Git and never committed.
   exit nodes, mobile carriers and cloud providers make it worse. Treat it as context for a human,
   never as proof: rules that will depend on it (impossible travel) must say so and use a margin.
 - The free databases have a city-level precision at best, and no accuracy radius is stored.
-- The country is not a risk signal by itself. A risk score will combine several signals (M3).
+- The country is not a risk signal by itself (it is not used in the risk score).
 - **A reputation is a lead, not a verdict.** AbuseIPDB scores come from user reports: an address
   that only scanned once may score 0, and shared addresses (NAT, VPN exits, cloud hosts) can score
   high because of someone else. A score of 0 for `8.8.8.8` (whitelisted) is right; a score of 100 for a
-  Tor exit is right and says nothing about *this* attempt. It will be one input of the risk score.
-- A failed lookup (quota, outage) is not retried later: that alert stays without a reputation. The
+  Tor exit is right and says nothing about *this* attempt. It is one input of the risk score, worth at most 25 points.
+- A failed lookup (quota, outage) is not retried later: that alert stays without a reputation, and its risk is computed without it. The
   cache means the next alert from the same address gets one once the provider answers again.
 - No backfill of old alerts, no reverse DNS, one reputation provider.

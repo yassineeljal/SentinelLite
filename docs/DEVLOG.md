@@ -13,6 +13,38 @@ Entry template:
 
 ---
 
+## 2026-09-27 — M3 (step 3) — Risk score of alerts (PR #20)
+
+**Housekeeping** — PR #19 (AbuseIPDB reputation) was merged into `main` on request; its CI is green.
+
+**What**
+- **`assess(severity, enrichment)`** (`enrichment/risk.py`): a pure, deterministic 0-100 score. The rule's severity is the base; AbuseIPDB reputation adds up to +25 (score ÷ 4, not for whitelisted addresses), a Tor exit +5, a hosting network +5; capped at 100. Levels: low < 40, medium 40-69, high 70-94, critical ≥ 95.
+- **Explainable by construction**: every point belongs to a named factor with a reason, and the factors always add up to the score (a `cap` factor carries the excess).
+- The enricher scores **every** alert it processes, including alerts without a source address and alerts whose enrichment failed (then the score is the rule's severity), so the ordering has no holes. Migration 0005 adds `alerts.risk_score` (indexed, for sorting) and `alerts.risk` (level and factors).
+- CLI: a risk column in `alerts list`; `alerts show` prints the score, the level and one line per factor.
+- Docs: `ENRICHMENT.md` (factor table, levels, what is deliberately not used), `OPERATIONS.md`, ADR 32.
+
+**Design notes**
+- **The country is deliberately not a factor**: it says nothing about intent, would bias the ranking and is easy to game (a test pins it). `non_public` sources get no adjustment.
+- **Weights are judgement calls and are written down as such**: constants in one file, pinned by tests, never calibrated on real incident data.
+- **Stored, not recomputed at read time**, so a dashboard can sort on an index and a future change of weights does not silently rewrite history.
+
+**How verified**
+- `ruff`, `mypy --strict` clean; **779 tests pass** with real Redis and Postgres (519 pass, 260 skipped without services). 30 risk tests (arithmetic per factor, monotonicity over the whole reputation range, the sum-of-factors invariant, level boundaries, country independence, JSON shape), integration tests through the real pipeline (an alert without address scored 50 = its severity; an alert whose enrichment failed still scored; reputation 91 → +22 → 82) and CLI tests including terminal-escape injection through the stored explanation.
+- Migration 0005 applied, reverted and re-applied on a fresh database; `alembic check` clean.
+- **Ten mutation checks, all caught**: reputation weight doubled, whitelisted addresses penalised, Tor ignored, hosting marker lost, a level boundary moved, no cap, a wrong cap value, a failed enrichment skipping the score, the `risk_score` column not written, the CLI printing the explanation unsanitised.
+- **Real stack** (real API, real databases): `185.220.101.1` (Tor exit, AbuseIPDB 100) → `90/100 (high)` with `+60 rule severity, +25 reputation, +5 tor exit`; `8.8.8.8` (whitelisted) → 60; a private address → 60. 33 of the 36 alerts already in the database predate the feature and show `not scored yet`. The reputation was served from the cache (no new API call). Test agent revoked.
+
+**Problems & lessons**
+- **The first threshold was wrong, and the real data showed it.** With "critical" at 90, a failed SSH brute force from the worst-reputed Tor exit (60 + 25 + 5) came out *critical*, which would have drained the word of its meaning for analysts. "Critical" now starts at 95 and a test pins both sides: that brute force is *high*, a successful login after failures from a middling source is *critical*. Lesson: check a scoring scheme on real outputs, not only on its arithmetic.
+- Two search-and-replace edits missed because the formatter had already rewrapped the lines they targeted: after running the formatter, re-read the code before scripting an edit.
+
+**Not done / limits**: no backfill of older alerts; no calibration against real incidents (weights are judgement calls); the score only exists when enrichment is enabled.
+
+**Next**: the `stateful` rule type and the impossible-travel rule (needs the last known location per user; it will use the GeoIP coordinates and must state the precision limits measured earlier). After that, M4 (dashboard with authentication).
+
+---
+
 ## 2026-09-26 — M3 (step 2) — AbuseIPDB reputation with cache, budget and circuit breaker (PR #19)
 
 **Housekeeping** — PR #18 (GeoIP enrichment) was merged into `main` on request; its CI is green.

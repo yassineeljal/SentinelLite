@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sentinel_core.db.models import AlertRecord
 from sentinel_core.detection.alerts import Alert
 from sentinel_core.enrichment.enricher import Enrichment
+from sentinel_core.enrichment.risk import RiskAssessment
 
 
 class AmbiguousAlertId(Exception):
@@ -32,6 +33,7 @@ class AlertSummary:
     match_count: int
     country_code: str | None  # from the enrichment, when there is one
     abuse_score: int | None  # AbuseIPDB confidence 0-100, when a reputation was fetched
+    risk_score: int | None  # 0-100, once the enricher has run
 
 
 @dataclass(frozen=True)
@@ -53,6 +55,7 @@ class AlertDetail:
     # Time between the server receiving the triggering line and the alert being stored.
     detection_latency: timedelta | None
     enrichment: dict[str, Any] | None  # as stored; None until the enricher has run
+    risk: dict[str, Any] | None  # RiskAssessment as stored: score, level, factors
 
 
 async def insert_alerts(session: AsyncSession, alerts: list[Alert]) -> None:
@@ -82,14 +85,24 @@ async def insert_alerts(session: AsyncSession, alerts: list[Alert]) -> None:
     )
 
 
-async def set_enrichment(session: AsyncSession, alert_id: str, enrichment: Enrichment) -> bool:
-    """Attach (or replace) the enrichment of a stored alert. False if the alert does not exist."""
+async def set_enrichment(
+    session: AsyncSession, alert_id: str, enrichment: Enrichment | None, risk: RiskAssessment
+) -> bool:
+    """Attach (or replace) the enrichment and the risk of a stored alert.
+
+    `enrichment` is None for an alert without a source address: it still gets its risk (from the
+    severity alone). False if the alert does not exist."""
     result = await session.execute(
         text(
-            "UPDATE alerts SET enrichment = CAST(:enrichment AS jsonb), enriched_at = now() "
-            "WHERE alert_id = :alert_id"
+            "UPDATE alerts SET enrichment = CAST(:enrichment AS jsonb), enriched_at = now(), "
+            "risk_score = :risk_score, risk = CAST(:risk AS jsonb) WHERE alert_id = :alert_id"
         ),
-        {"alert_id": alert_id, "enrichment": json.dumps(enrichment.model_dump(mode="json"))},
+        {
+            "alert_id": alert_id,
+            "enrichment": json.dumps(enrichment.model_dump(mode="json")) if enrichment else None,
+            "risk_score": risk.score,
+            "risk": json.dumps(risk.model_dump(mode="json")),
+        },
     )
     return bool(getattr(result, "rowcount", 0))
 
@@ -97,7 +110,7 @@ async def set_enrichment(session: AsyncSession, alert_id: str, enrichment: Enric
 _SUMMARY_COLUMNS = (
     "alert_id, rule_id, title, severity, ts, created_at, host(src_ip) AS src_ip, host, user_name,"
     " match_count, enrichment->'geo'->>'country_code' AS country_code,"
-    " CAST(enrichment->'reputation'->>'score' AS integer) AS abuse_score"
+    " CAST(enrichment->'reputation'->>'score' AS integer) AS abuse_score, risk_score"
 )
 
 
@@ -115,6 +128,7 @@ def _summary(row: Any) -> AlertSummary:
         match_count=row.match_count,
         country_code=row.country_code,
         abuse_score=row.abuse_score,
+        risk_score=row.risk_score,
     )
 
 
@@ -137,7 +151,7 @@ async def get_alert(session: AsyncSession, alert_id_prefix: str) -> AlertDetail 
     matches = (
         await session.execute(
             text(
-                f"SELECT {_SUMMARY_COLUMNS}, mitre, group_values, event_ids, enrichment "  # noqa: S608
+                f"SELECT {_SUMMARY_COLUMNS}, mitre, group_values, event_ids, enrichment, risk "  # noqa: S608
                 "FROM alerts "
                 "WHERE alert_id LIKE :prefix LIMIT 2"
             ),
@@ -180,4 +194,5 @@ async def get_alert(session: AsyncSession, alert_id_prefix: str) -> AlertDetail 
         evidence=evidence,
         detection_latency=latency,
         enrichment=dict(row.enrichment) if row.enrichment is not None else None,
+        risk=dict(row.risk) if row.risk is not None else None,
     )

@@ -106,6 +106,7 @@ class AlertRecord(Base):
         Index("ix_alerts_ts", "ts"),
         Index("ix_alerts_rule_id_ts", "rule_id", "ts"),
         Index("ix_alerts_src_ip_ts", "src_ip", "ts"),
+        Index("ix_alerts_risk_score", "risk_score"),
     )
 
     alert_id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -126,3 +127,7 @@ class AlertRecord(Base):
     # for alerts without a source address.
     enrichment: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
     enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # Computed by the enricher from the severity and the enrichment (see enrichment/risk.py):
+    # the score has its own column so that it can be indexed and sorted; NULL until then.
+    risk_score: Mapped[int | None] = mapped_column(SmallInteger, default=None)
+    risk: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)

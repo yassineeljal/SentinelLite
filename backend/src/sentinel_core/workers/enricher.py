@@ -28,6 +28,7 @@ from sentinel_core.enrichment.abuseipdb import AbuseIpDbClient
 from sentinel_core.enrichment.enricher import Enricher, Enrichment
 from sentinel_core.enrichment.geoip import GeoIpError, GeoIpResolver
 from sentinel_core.enrichment.reputation import ReputationService
+from sentinel_core.enrichment.risk import RiskAssessment, assess
 from sentinel_core.workers.consumer import (
     Entry,
     StreamConsumer,
@@ -66,8 +67,8 @@ class EnricherWorker(StreamConsumer):
         self._enricher = enricher
 
     async def process_batch(self, entries: list[Entry]) -> None:
-        results: list[tuple[str, Enrichment]] = []
-        unusable = no_address = 0
+        results: list[tuple[str, Enrichment | None, RiskAssessment]] = []
+        unusable = no_address = failed = 0
         for entry_id, fields in entries:
             if fields is None:  # entry deleted while still pending
                 continue
@@ -77,29 +78,33 @@ class EnricherWorker(StreamConsumer):
                 logger.error("entry %s is not an alert: skipped", entry_id)
                 unusable += 1
                 continue
+            enrichment: Enrichment | None = None
             try:
                 enrichment = await self._enricher.enrich(alert.src_ip)
             except RedisError:
                 raise  # infrastructure problem: leave the batch pending and retry
             except Exception:  # a bad record must not block the alerts behind it
-                logger.exception("cannot enrich alert %s: left as it is", alert.alert_id[:12])
-                unusable += 1
-                continue
-            if enrichment is None:
+                logger.exception(
+                    "cannot enrich alert %s: risk from severity only", alert.alert_id[:12]
+                )
+                failed += 1
+            if alert.src_ip is None:
                 no_address += 1
-            else:
-                results.append((alert.alert_id, enrichment))
+            # Every alert gets a risk, even without context: it then equals the rule's severity.
+            results.append((alert.alert_id, enrichment, assess(alert.severity, enrichment)))
 
         missing = 0
         if results:
             async with self._sessions.begin() as session:
-                for alert_id, enrichment in results:
-                    if not await set_enrichment(session, alert_id, enrichment):
+                for alert_id, enrichment, risk in results:
+                    if not await set_enrichment(session, alert_id, enrichment, risk):
                         missing += 1
         logger.info(
-            "batch: %d enriched, %d without source address, %d unusable, %d not in the database",
+            "batch: %d scored, %d without source address, %d enrichment failures, %d unusable, "
+            "%d not in the database",
             len(results) - missing,
             no_address,
+            failed,
             unusable,
             missing,
         )
