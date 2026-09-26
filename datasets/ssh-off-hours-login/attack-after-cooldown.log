@@ -1,0 +1,4 @@
+# expect: 2
+# description: The same account logs in at night twice, ninety minutes apart: the cooldown has expired, two alerts.
+2026-09-25T05:00:00+00:00 ubuntu-01 sshd[901]: Accepted publickey for alice from 198.51.100.20 port 50001 ssh2: ED25519 SHA256:abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG
+2026-09-25T06:30:00+00:00 ubuntu-01 sshd[960]: Accepted publickey for alice from 198.51.100.20 port 50002 ssh2: ED25519 SHA256:abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG

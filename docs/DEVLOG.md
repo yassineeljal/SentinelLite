@@ -13,6 +13,38 @@ Entry template:
 
 ---
 
+## 2026-09-25 — M2 (step 5) — Time-of-day conditions and the off-hours login rule (PR #17)
+
+**Housekeeping** — PR #16 (distinct aggregation, sequence rules, negative scenarios) was merged into `main` on request; its CI is green.
+
+**What**
+- **`when`**: a rule, or a sequence step, can be restricted to a local-time schedule: `timezone` (required IANA name), then `any_of` entries made of `hours: "HH:MM-HH:MM"` (start included, end excluded, a start after the end crosses midnight) and/or `days: [mon..sun]` (both must hold inside one entry). An event outside the schedule is left out like an `exclude`: not counted, no cooldown, no sequence step. New module `detection/schedule.py`; `tzdata` added as a dependency so the timezone database does not depend on the host image.
+- **Rule `ssh-off-hours-login`** (T1078, severity 35): a successful login between 22:00 and 06:00 or on a weekend, America/Toronto time, one alert per account and host per hour. Eleven rules in total.
+- 9 scenarios (5 attack, 4 benign): a login at 01:30 local, two accounts, a Saturday noon, the exact start (22:00:00 local), the same account again after the cooldown; benign: working hours, the second before the start and the exact end (06:00:00), **23:00 UTC that is 19:00 local**, and night-time failures (only a success counts).
+- The shared *normal day* now models a site whose staff log in during local working hours (see the problem below). Docs: `DETECTION.md` (`when`, the rule, limits), `BENCHMARK.md` regenerated, ADR 29.
+
+**Result** — 11 rules, 45 attack scenarios (**45/45 detected**), 78/78 scenarios with the exact expected alert counts, 4 negative scenarios, 29 benign scenarios with **0 false alerts** on 681 benign events.
+
+**Design notes**
+- **No default timezone.** Timestamps are UTC; a schedule that silently read "22:00" as UTC would be wrong by the host's offset. The benign scenario `utc-night-is-local-evening` pins this.
+- **Effective time.** The schedule reads the same time as the windows: a date more than 5 s in the future is replaced by the receipt time *before* the schedule is checked, so a forged date cannot move an event into or out of it.
+- **Weekdays are the local weekday of the event itself**, not of the day a night range started (an event at 01:00 on Saturday is a Saturday event). Simple to state, and written in the reference.
+- Only timezone *names* are accepted (no paths: `zoneinfo` would also read files by relative path), and start = end is refused as ambiguous (empty or whole day).
+
+**How verified**
+- Local: `ruff`, `mypy --strict` clean; **635 tests pass** with real Redis and Postgres (408 pass and 227 are skipped without services); the integration test replays all 78 scenarios through the real pipeline.
+- 23 schedule unit tests: timezone vs UTC, midnight crossing, inclusive start / exclusive end, local weekday, hours AND days, alternatives, daylight saving time (2026-03-08), invalid entries and timezones (including path-like names).
+- **Ten mutation checks**, each caught: rule read in UTC, range end +1 minute, weekend without Saturday, no cooldown (benchmark fails), engine ignoring `when` on a rule or on a step, end of range included, broken midnight wrap, timezone ignored, and the raw timestamp used instead of the effective one (schedule tests fail; the last one also fails the three existing forged-timestamp tests).
+- Not run on the lab VM: a real off-hours login needs the lab VM's clock to be in the schedule (a login after 22:00 Toronto time); the log format is the one already validated in earlier steps.
+
+**Problems & lessons**
+- The benchmark caught the rule's first false positives immediately: **21 alerts on the shared normal day**, whose generator produced 2-5 SSH sessions per hour all night. The day was "normal" for a server that never sleeps, not for a site with local working hours. Rather than weakening the rule, the generator now models Toronto staff (no interactive logins between 22:00 and 06:00 local; cron and Internet probes continue). Lesson: a benign dataset encodes assumptions; a new rule can expose them, and they must be written down (in the generator, the rule description and here). A site with night shifts needs its own `when`.
+- The schedule cannot be trusted against an attacker who controls the host's clock or log lines: `when` is a triage signal (documented in the limits).
+
+**Next**: this closes the M2 rule engine (match, threshold, distinct, sequence, time of day; 11 rules). Then M3: enrichment (GeoIP / IP reputation) and the `stateful` rule type (impossible travel).
+
+---
+
 ## 2026-09-25 — M2 (step 4) — `distinct` aggregation, `sequence` rules, negative scenarios (PR #16)
 
 **Housekeeping** — PR #15 (five Linux privilege and persistence rules) was merged into `main` on request; its CI is green.

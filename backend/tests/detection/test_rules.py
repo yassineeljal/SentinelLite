@@ -351,3 +351,59 @@ def test_only_the_first_step_of_a_sequence_can_have_a_count() -> None:
                 "then: {match: {source: linux.auth, action: login_success}, count: 3}",
             )
         )
+
+
+# --- time-of-day conditions --------------------------------------------------------------------
+
+OFF_HOURS = """
+id: off-hours-login
+title: Login outside working hours
+mitre: [T1078]
+severity: 40
+type: match
+match: {source: linux.auth, action: login_success}
+when:
+  timezone: America/Toronto
+  any_of:
+    - hours: "22:00-06:00"
+    - days: [sat, sun]
+"""
+
+
+def test_a_match_rule_can_carry_a_schedule() -> None:
+    rule = parse_rule_yaml(OFF_HOURS)
+
+    assert rule.when is not None and rule.when.timezone == "America/Toronto"
+    assert [(e.hours, e.days) for e in rule.when.any_of] == [
+        ("22:00-06:00", None),
+        (None, ["sat", "sun"]),
+    ]
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda t: t.replace("timezone: America/Toronto\n", ""),  # no default timezone
+        lambda t: t.replace("America/Toronto", "Mars/Olympus"),
+        lambda t: t.replace("22:00-06:00", "22h-6h"),
+        lambda t: t.replace("[sat, sun]", "[saturday]"),
+        lambda t: t.replace("any_of", "any"),  # unknown key
+        lambda t: t.replace("    - days: [sat, sun]\n", "    - {}\n"),
+    ],
+)
+def test_invalid_schedules_are_refused(mutate: Any) -> None:
+    with pytest.raises(RuleLoadError):
+        parse_rule_yaml(mutate(OFF_HOURS))
+
+
+def test_a_sequence_rule_puts_its_schedule_on_a_step() -> None:
+    night = 'when: {timezone: UTC, any_of: [{hours: "22:00-06:00"}]}'
+    on_a_step = SEQUENCE.replace(
+        "then: {match: {source: linux.auth, action: login_success}}",
+        f"then: {{match: {{source: linux.auth, action: login_success}}, {night}}}",
+    )
+    at_the_top = SEQUENCE + OFF_HOURS[OFF_HOURS.index("when:") :]
+
+    assert parse_rule_yaml(on_a_step).sequence.then.when is not None  # type: ignore[union-attr]
+    with pytest.raises(RuleLoadError, match="steps"):
+        parse_rule_yaml(at_the_top)

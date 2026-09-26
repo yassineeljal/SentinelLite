@@ -10,7 +10,8 @@ from typing import Any
 from redis.exceptions import RedisError
 
 from sentinel_core.detection.alerts import Alert
-from sentinel_core.detection.rules import Rule
+from sentinel_core.detection.rules import Rule, SequenceStep
+from sentinel_core.detection.schedule import Schedule
 from sentinel_core.detection.store import WindowStore
 from sentinel_core.schema.event import Event
 
@@ -55,6 +56,7 @@ def field_value(event: Event, name: str) -> str | None:
 class _Step:
     conditions: list[tuple[str, frozenset[str]]]
     exclusions: list[tuple[str, frozenset[str]]]
+    when: Schedule | None
 
 
 class _CompiledRule:
@@ -65,12 +67,11 @@ class _CompiledRule:
         self.first: _Step | None = None
         self.then: _Step | None = None
         if rule.sequence is not None:
-            self.first = _Step(
-                self._compile(rule.sequence.first.match), self._compile(rule.sequence.first.exclude)
-            )
-            self.then = _Step(
-                self._compile(rule.sequence.then.match), self._compile(rule.sequence.then.exclude)
-            )
+            self.first = self._step(rule.sequence.first)
+            self.then = self._step(rule.sequence.then)
+
+    def _step(self, spec: SequenceStep) -> "_Step":
+        return _Step(self._compile(spec.match), self._compile(spec.exclude), spec.when)
 
     @staticmethod
     def _compile(mapping: dict[str, Any]) -> list[tuple[str, frozenset[str]]]:
@@ -84,15 +85,19 @@ class _CompiledRule:
     def _holds(event: Event, conditions: list[tuple[str, frozenset[str]]]) -> bool:
         return all(field_value(event, name) in allowed for name, allowed in conditions)
 
-    def step_holds(self, event: Event, step: "_Step") -> bool:
+    def step_holds(self, event: Event, step: "_Step", ts: datetime) -> bool:
+        if step.when is not None and not step.when.contains(ts):
+            return False
         if not self._holds(event, step.conditions):
             return False
         return not (step.exclusions and self._holds(event, step.exclusions))
 
-    def matches(self, event: Event) -> bool:
+    def matches(self, event: Event, ts: datetime) -> bool:
         """Is this event relevant to the rule (for a sequence: to either of its steps)?"""
         if self.first is not None and self.then is not None:
-            return self.step_holds(event, self.first) or self.step_holds(event, self.then)
+            return self.step_holds(event, self.first, ts) or self.step_holds(event, self.then, ts)
+        if self.rule.when is not None and not self.rule.when.contains(ts):
+            return False
         if not self._holds(event, self.conditions):
             return False
         return not (self.exclusions and self._holds(event, self.exclusions))
@@ -141,7 +146,7 @@ class DetectionEngine:
         ts = self._effective_ts(event)
         alerts: list[Alert] = []
         for compiled in self._rules:
-            if not compiled.matches(event):
+            if not compiled.matches(event, ts):
                 continue
             try:
                 if compiled.rule.type == "threshold":
@@ -243,7 +248,7 @@ class DetectionEngine:
         window_ms = spec.window_seconds * 1000
 
         alert: Alert | None = None
-        if compiled.step_holds(event, compiled.then):
+        if compiled.step_holds(event, compiled.then, ts):
             prior = await self._store.peek(key, ts_ms, window_ms=window_ms)
             if prior.count >= spec.first.count and await self._store.acquire_cooldown(
                 key, ts_ms, rule.cooldown_seconds * 1000, event.event_id
@@ -257,7 +262,7 @@ class DetectionEngine:
                     [event.event_id, *prior.evidence],
                     prior.count + 1,
                 )
-        if compiled.step_holds(event, compiled.first):
+        if compiled.step_holds(event, compiled.first, ts):
             await self._store.record_and_check(
                 key, event.event_id, ts_ms, window_ms=window_ms, count=1, cooldown_ms=0
             )

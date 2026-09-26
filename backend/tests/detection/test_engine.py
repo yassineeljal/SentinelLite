@@ -668,3 +668,72 @@ async def test_a_step_exclusion_is_honoured() -> None:
     )
 
     assert alerts == []
+
+
+# --- time-of-day conditions --------------------------------------------------------------------
+
+NIGHT = {"timezone": "UTC", "any_of": [{"hours": "22:00-06:00"}]}
+HOUR = 3600  # T0 is 15:00 UTC
+
+
+def night_login_rule(**changes: Any) -> Rule:
+    return root_login_rule(when=NIGHT, **changes)
+
+
+async def test_a_schedule_keeps_daytime_events_out_and_lets_night_events_in() -> None:
+    eng = engine(night_login_rule())
+
+    day = await eng.evaluate(make_event(1, action=Action.LOGIN_SUCCESS, at=0))  # 15:00
+    night = await eng.evaluate(make_event(2, action=Action.LOGIN_SUCCESS, at=9 * HOUR))  # 00:00
+
+    assert day == [] and len(night) == 1
+
+
+async def test_a_schedule_is_read_in_its_own_timezone() -> None:
+    toronto = {"timezone": "America/Toronto", "any_of": [{"hours": "22:00-06:00"}]}
+    eng = engine(root_login_rule(when=toronto))
+
+    utc_night = await eng.evaluate(make_event(1, action=Action.LOGIN_SUCCESS, at=9 * HOUR))
+    local_night = await eng.evaluate(make_event(2, action=Action.LOGIN_SUCCESS, at=13 * HOUR))
+
+    assert utc_night == []  # 00:00 UTC is 20:00 in Toronto
+    assert len(local_night) == 1  # 04:00 UTC is 00:00 in Toronto
+
+
+async def test_a_forged_timestamp_cannot_move_an_event_into_or_out_of_the_schedule() -> None:
+    """An event dated in the future is dated by the server, and the schedule uses that date."""
+    eng = engine(night_login_rule())
+    forged = make_event(
+        1, action=Action.LOGIN_SUCCESS, at=9 * HOUR, received_at=T0 + timedelta(seconds=1)
+    )
+
+    assert await eng.evaluate(forged) == []  # claims midnight, was received at 15:00
+
+
+async def test_a_threshold_only_counts_the_events_inside_its_schedule() -> None:
+    rule = brute_force_rule(when=NIGHT)
+    daytime = await run_events(engine(rule), [make_event(i, at=i) for i in range(5)])
+    night = await run_events(engine(rule), [make_event(i, at=9 * HOUR + i) for i in range(5)])
+    straddling = await run_events(
+        engine(rule),
+        [make_event(i, at=9 * HOUR - 2 + i) for i in range(5)],  # 23:59:58 to 00:00:02
+    )
+
+    assert daytime == [] and len(night) == 1 and len(straddling) == 1
+
+
+async def test_a_sequence_step_can_have_its_own_schedule() -> None:
+    def rule() -> Rule:
+        return success_after_failures(
+            sequence={
+                "window": "10h",
+                "first": {"match": {"action": "login_failed"}, "count": 5},
+                "then": {"match": {"action": "login_success"}, "when": NIGHT},
+            }
+        )
+
+    fails = failures(5)  # 15:00 UTC: the first step has no schedule
+    by_day = await run_events(engine(rule()), [*fails, success(100, at=20)])
+    at_night = await run_events(engine(rule()), [*fails, success(100, at=9 * HOUR)])
+
+    assert by_day == [] and len(at_night) == 1

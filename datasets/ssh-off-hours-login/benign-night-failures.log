@@ -1,0 +1,5 @@
+# expect: 0
+# description: Three failed logins at night (below the brute-force thresholds): only a successful login counts for this rule.
+2026-09-25T05:00:00+00:00 ubuntu-01 sshd[901]: Failed password for alice from 198.51.100.20 port 50001 ssh2
+2026-09-25T05:00:05+00:00 ubuntu-01 sshd[902]: Failed password for alice from 198.51.100.20 port 50002 ssh2
+2026-09-25T05:00:10+00:00 ubuntu-01 sshd[903]: Failed password for alice from 198.51.100.20 port 50003 ssh2
