@@ -22,6 +22,7 @@ from pydantic import (
     model_validator,
 )
 
+from sentinel_core.detection.schedule import Schedule
 from sentinel_core.schema.event import Action, Category, Outcome, Source
 
 
@@ -126,6 +127,7 @@ class SequenceStep(BaseModel):
 
     match: dict[str, Condition]
     exclude: dict[str, Condition] = Field(default_factory=dict)
+    when: Schedule | None = None  # time of day of the event (see Rule.when)
     count: int = Field(default=1, ge=1, le=MAX_COUNT)
 
     @field_validator("match", "exclude")
@@ -168,6 +170,9 @@ class Rule(BaseModel):
     # Events that satisfy ALL these conditions are left out even if `match` holds (e.g. accounts
     # whose shell is nologin). Same syntax as `match`.
     exclude: dict[str, Condition] = Field(default_factory=dict)
+    # Only events whose local time falls in the schedule are considered (off-hours logins...):
+    # an event outside it is left out, exactly like an `exclude`. For a sequence, put it on a step.
+    when: Schedule | None = None
     group_by: list[str] = Field(default_factory=list)
     threshold: ThresholdSpec | None = None
     sequence: SequenceSpec | None = None
@@ -229,8 +234,10 @@ class Rule(BaseModel):
                 raise ValueError("a sequence rule needs a 'sequence' (window, first, then)")
             if not self.group_by:
                 raise ValueError("a sequence rule needs 'group_by' (what the steps share)")
-            if self.match or self.exclude:
-                raise ValueError("a sequence rule puts its conditions in the steps, not in 'match'")
+            if self.match or self.exclude or self.when:
+                raise ValueError(
+                    "a sequence rule puts its conditions ('match', 'exclude', 'when') in the steps"
+                )
         elif self.sequence is not None:
             raise ValueError(f"a {self.type} rule cannot have a 'sequence'")
         return self

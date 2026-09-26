@@ -6,6 +6,11 @@ test checks the committed file is exactly this output. The traffic is realistic 
 key-based logins, a few password typos followed by a success, cron and systemd-logind noise, sudo
 for routine administration, and background probes from the Internet that stay below every
 threshold. NO rule may alert on it. Addresses come from the documentation ranges (RFC 5737).
+
+The site is in America/Toronto (UTC-4 on this day) and its staff log in during local working hours:
+people do not open SSH sessions between 22:00 and 06:00 local time (cron and Internet probes keep
+running). That is what makes it a *normal day* for the off-hours rule too; a site with night shifts
+would need its own schedule in that rule.
 """
 
 import random
@@ -14,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 SEED = 20260925
 HOST = "prod-web-01"
 DAY = datetime(2026, 9, 24, tzinfo=UTC)
+SITE_UTC_OFFSET_HOURS = -4  # America/Toronto in September
 USERS = {"alice": "10.0.0.5", "bob": "10.0.0.6", "carol": "10.0.0.7", "deploy": "10.0.0.20"}
 PROBE_NETS = ("198.51.100", "203.0.113", "192.0.2")
 PROBE_NAMES = ("admin", "test", "ubuntu", "oracle", "git", "pi", "user", "guest")
@@ -50,7 +56,13 @@ def generate() -> str:
         emit(DAY + timedelta(hours=hour, minutes=17), "CRON", "pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)")
         emit(DAY + timedelta(hours=hour, minutes=17, seconds=1), "CRON", "pam_unix(cron:session): session closed for user root")
 
-        low, high = (9, 16) if 8 <= hour <= 19 else (2, 5)  # more sessions during working hours
+        local = (hour + SITE_UTC_OFFSET_HOURS) % 24
+        if 8 <= local <= 19:
+            low, high = 9, 16  # working hours: the busiest time
+        elif 6 <= local < 22:
+            low, high = 2, 5  # early morning and evening
+        else:
+            low, high = 0, 0  # night: nobody logs in
         for _ in range(rng.randint(low, high)):
             user = rng.choice(list(USERS))
             ip, port, start = USERS[user], rng.randint(40000, 60000), at(hour)

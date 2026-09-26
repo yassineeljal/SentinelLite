@@ -1,0 +1,4 @@
+# expect: 1
+# description: alice logs in at 01:30 local time; a second login ten minutes later is the same alert (one per account and host per hour).
+2026-09-25T05:30:00+00:00 ubuntu-01 sshd[901]: Accepted publickey for alice from 198.51.100.20 port 50001 ssh2: ED25519 SHA256:abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG
+2026-09-25T05:40:00+00:00 ubuntu-01 sshd[917]: Accepted publickey for alice from 198.51.100.20 port 50002 ssh2: ED25519 SHA256:abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG

@@ -1,0 +1,4 @@
+# expect: 0
+# description: One second before 22:00 local time (01:59:59 UTC) and exactly 06:00:00 local time (10:00:00 UTC): the end of the range is excluded.
+2026-09-25T01:59:59+00:00 ubuntu-01 sshd[901]: Accepted publickey for alice from 198.51.100.20 port 50001 ssh2: ED25519 SHA256:abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG
+2026-09-25T10:00:00+00:00 ubuntu-01 sshd[915]: Accepted publickey for bob from 198.51.100.21 port 50002 ssh2: ED25519 SHA256:abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG

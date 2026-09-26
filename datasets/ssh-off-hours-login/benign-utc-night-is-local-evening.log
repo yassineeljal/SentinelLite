@@ -1,0 +1,4 @@
+# expect: 0
+# description: 23:00 and 00:30 UTC are night in UTC but 19:00 and 20:30 local time on a weekday: the rule reads the site's timezone, not UTC.
+2026-09-24T23:00:00+00:00 ubuntu-01 sshd[901]: Accepted publickey for alice from 198.51.100.20 port 50001 ssh2: ED25519 SHA256:abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG
+2026-09-25T00:30:00+00:00 ubuntu-01 sshd[915]: Accepted publickey for bob from 198.51.100.21 port 50002 ssh2: ED25519 SHA256:abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG

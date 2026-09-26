@@ -1,0 +1,4 @@
+# expect: 2
+# description: Two different accounts log in at night: one alert each (the cooldown is per account and host).
+2026-09-25T03:00:00+00:00 ubuntu-01 sshd[901]: Accepted publickey for alice from 198.51.100.20 port 50001 ssh2: ED25519 SHA256:abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG
+2026-09-25T03:05:00+00:00 ubuntu-01 sshd[915]: Accepted publickey for bob from 198.51.100.21 port 50002 ssh2: ED25519 SHA256:abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG

@@ -21,6 +21,11 @@ match:                        # ALL conditions must hold (AND)
 group_by: [src_ip]            # threshold: count per group. match: cooldown per group (optional)
 threshold: {count: 5, window: 60s}   # threshold rules only; 2 <= count <= 5000. Add `distinct: <field>` to count distinct values
 cooldown: 300s                # optional. Default: the window (threshold) / none (match). 0s disables
+when:                         # optional: only events inside this local-time schedule are considered (see below)
+  timezone: America/Toronto
+  any_of:
+    - hours: "22:00-06:00"
+    - days: [sat, sun]
 scope: agent                  # optional. agent (default): state per agent | global: events of all agents together
 enabled: true                 # optional
 ```
@@ -46,7 +51,7 @@ enabled: true                 # optional
 | `match` | implemented | one event satisfies the conditions (and the group's cooldown allows it) |
 | `threshold` | implemented | `count` matching events of the same group fall within `window` |
 | `sequence` | implemented | a `then` event arrives within `window` after `first` (at least `first.count` events) for the same group |
-| `stateful` | planned (M2/M3) | needs history/enrichment: impossible travel, off-hours |
+| `stateful` | planned (M3) | needs history/enrichment: impossible travel (last known location per user) |
 
 **`threshold` with `distinct`.** `threshold: {count: 6, window: 60s, distinct: user_name}` counts the
 different values of a field instead of the events: ten attempts on one name count once. Used for user
@@ -54,6 +59,24 @@ enumeration and password spraying, where the interesting signal is the number of
 failures. A matching event that lacks the field is skipped. The count is per (rule, group); values are
 hashed before they reach Redis. The cooldown identity is the *event*, not the value, so a second event
 carrying an already-counted name cannot re-raise the alert.
+
+**`when` (time of day).** Restricts a rule (or a sequence *step*) to the events whose local time falls
+in a schedule, e.g. logins at night or at the weekend:
+
+```yaml
+when:
+  timezone: America/Toronto      # required IANA name: there is no default, so "22:00" is never read as UTC by mistake
+  any_of:                        # the event matches if ANY entry holds
+    - hours: "22:00-06:00"       # HH:MM-HH:MM, start included, end excluded; start > end crosses midnight
+    - days: [sat, sun]           # local weekday of the event itself; with `hours` in one entry, both must hold
+```
+
+An event outside the schedule is left out exactly like an `exclude`: it is not counted by a threshold,
+does not start a cooldown, does not feed a sequence. The time used is the same *effective* time as
+for windows (a forged future date is replaced by the receipt time first), converted to the schedule's
+timezone with daylight saving time applied. Unknown timezones, bad ranges (`9-17`, start = end),
+unknown days and unknown keys are refused at load time. In a sequence rule the schedule goes on a
+step, not on the rule.
 
 **`sequence`.** Two steps that share a group (`group_by` is required):
 
@@ -146,6 +169,7 @@ engine rather than plain `re`.
 | `sudo-root-shell` | T1548.003 | match | an interactive root shell through sudo (`sudo -i`, `-s`, `su`, `su -`, `bash`…): the logged command is exactly a shell with no arguments. One alert per user and host per minute. Administrators do this routinely: moderate severity, the value is the trail |
 | `sudo-auth-failures` | T1110.001, T1548.003 | threshold | ≥ 3 failed sudo **invocations** (wrong password or not in sudoers) per user and host in 10 min. Counts invocations, not guesses: sudo asks up to three times per invocation and logs one summary line |
 | `ssh-success-after-failures` | T1110, T1078 | sequence | a successful login from a source that failed ≥ 5 times in the previous 10 min: the guessing worked. Per source address (also covers spraying), severity 85, one alert per source per 10 min |
+| `ssh-off-hours-login` | T1078 | match + `when` | a successful login between 22:00 and 06:00 or on a Saturday or Sunday, **America/Toronto time** (edit `when` for your site). A lead, not an attack: severity 35, one alert per account and host per hour. Blind spot: a login during working hours is not seen by this rule |
 | `ssh-user-enumeration` | T1110.003, T1087.001 | threshold (distinct) | ≥ 6 **distinct** user names tried from one source in 60 s (`Invalid user` and `Failed password for invalid user` of one attempt count once). One name tried many times is `ssh-bruteforce`, not this |
 | `linux-new-admin-account` | T1136.001, T1098.007 | sequence | an account is created and, within 15 min, added to `sudo`/`admin`/`wheel`/`root` on the same host: a backdoor administrator. The two single-step rules also fire; this one is the correlation. Other privileged groups (`docker`, `shadow`…) are not part of it: **blind spot** |
 
@@ -237,7 +261,8 @@ data on a running stack, either use groups (e.g. IPs) not seen live, or clear th
 
 ## Limits
 
-- Ten rules, one source (`linux.auth`); no `stateful` rules (time of day, impossible travel), no regex conditions.
+- Eleven rules, one source (`linux.auth`); no `stateful` rules (impossible travel), no regex conditions.
+- `when` reads the event's own timestamp: an attacker with root on the monitored host can forge the time written in a log line (a date in the future is replaced by the receipt time, a date in the past is not). It is a triage signal, not a boundary.
 - `sequence` has two steps only (no chains of three), and its `first` step counts events, not distinct values.
 - `ssh-success-after-failures` counts failures per source address: an attacker who stays under five failures per ten minutes, or who rotates addresses, is not caught by it.
 - No hot reload of rules; no per-rule metrics yet.

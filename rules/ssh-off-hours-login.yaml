@@ -1,0 +1,22 @@
+id: ssh-off-hours-login
+title: SSH login outside working hours
+description: >
+  A successful SSH login between 22:00 and 06:00, or at any time on a Saturday or Sunday, in the
+  timezone of the monitored site (America/Toronto here: edit `when` to match your own hours). Not an
+  attack by itself, a lead: a stolen credential is often used when nobody is looking. Moderate
+  severity because administrators and batch jobs also work at night. One alert per account and host
+  per hour. Blind spots: an attacker who logs in during working hours is not seen by this rule, and
+  the time is the one written in the log line, which an attacker with root on the host can forge.
+mitre: [T1078]
+severity: 35
+type: match
+match:
+  source: linux.auth
+  action: login_success
+when:
+  timezone: America/Toronto
+  any_of:
+    - hours: "22:00-06:00"
+    - days: [sat, sun]
+group_by: [user_name, host]
+cooldown: 1h
