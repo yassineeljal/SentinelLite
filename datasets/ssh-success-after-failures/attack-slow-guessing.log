@@ -1,0 +1,8 @@
+# expect: 1
+# description: Five failures spread over eight minutes (invisible to the 60-second brute-force rule), then a success.
+2026-09-24T10:00:00+00:00 prod-web-01 sshd[5024]: Failed password for deploy from 203.0.113.7 port 45021 ssh2
+2026-09-24T10:02:00+00:00 prod-web-01 sshd[5027]: Failed password for deploy from 203.0.113.7 port 45024 ssh2
+2026-09-24T10:04:00+00:00 prod-web-01 sshd[5030]: Failed password for deploy from 203.0.113.7 port 45027 ssh2
+2026-09-24T10:06:00+00:00 prod-web-01 sshd[5033]: Failed password for deploy from 203.0.113.7 port 45030 ssh2
+2026-09-24T10:08:00+00:00 prod-web-01 sshd[5036]: Failed password for deploy from 203.0.113.7 port 45033 ssh2
+2026-09-24T10:09:00+00:00 prod-web-01 sshd[5039]: Accepted password for deploy from 203.0.113.7 port 55036 ssh2

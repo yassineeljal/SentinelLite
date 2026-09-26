@@ -13,6 +13,41 @@ Entry template:
 
 ---
 
+## 2026-09-25 — M2 (step 4) — `distinct` aggregation, `sequence` rules, negative scenarios (PR #16)
+
+**Housekeeping** — PR #15 (five Linux privilege and persistence rules) was merged into `main` on request; its CI is green.
+
+**What**
+- **`threshold` with `distinct: <field>`**: counts the different values of a field instead of the events. Rule `ssh-user-enumeration` (T1110.003 / T1087.001): ≥ 6 distinct user names from one source in 60 s.
+- **`sequence` rule type**: `first` (at least `count` events) then `then`, within `window`, per group. Rules `ssh-success-after-failures` (T1110 / T1078: a login succeeds after ≥ 5 failures from the same source in 10 min) and `linux-new-admin-account` (T1136.001 / T1098.007: an account created, then added to `sudo`/`admin`/`wheel`/`root` on the same host within 15 min). Ten rules in total.
+- **Window store**: same atomic Lua script for both features (memory and Redis), a `peek` operation to read a window without writing, a capacity cap of 10 000 entries per window (oldest dropped) and `count` ≤ 5000 refused at load time.
+- **`negative` scenario kind** (`negative*.log`): a near miss where the owner rule must stay silent (`# expect: 0`) while related rules may fire (`# also`). The benchmark reports it in its own column.
+- 23 new scenarios (69 in total). Existing scenarios that now legitimately trigger the new rules got `# also` headers; the real-pipeline test (`test_detector_integration.py`) now counts alerts declared with `# also`.
+- Docs: `DETECTION.md` (`distinct`, `sequence`, negative scenarios, three rules, limits), `BENCHMARK.md` regenerated, ADR 28.
+
+**Result** — 10 rules, 40 attack scenarios (**40/40 detected**), 69/69 scenarios with the exact expected alert counts, 4 negative scenarios (4/4 silent as expected), 25 benign scenarios with **0 false alerts** on 744 benign events.
+
+**Design notes**
+- **An event never completes a sequence with itself.** The `then` event is checked against the window *before* the `first` event is recorded; otherwise a step whose conditions match both shapes would fire alone.
+- **Cooldown identity is the event.** For a distinct window the alert's trigger identity must be the event, not the counted value (see the bug below); the sequence alert id is `sha256(rule | group | then-event)`, so at-least-once redelivery re-raises the same alert and never duplicates it.
+- **Sequence evidence** = the `then` event followed by the `first` events in the window; `match_count` = first events + 1.
+- `ssh-success-after-failures` groups by source address, not by account: password spraying (one failure per account) is covered, at the price of missing an attacker who stays under 5 failures per 10 min or who rotates addresses (written in the rule's limits).
+
+**How verified**
+- Local: `ruff`, `mypy --strict` clean; **572 tests pass** with real Redis and Postgres (363 pass and 209 are skipped without services). The 55 store contract tests run on both the memory store and real Redis, and the integration test replays **all 69 scenarios** through Redis, the normalizer, Postgres and the detector.
+- **Mutation checks**: six weakened versions of the new rules (thresholds, windows, groups, steps) each made their own scenarios fail, and a mutation of the engine (recording `first` before reading the window) made `test_an_event_never_completes_a_sequence_with_itself` fail; the engine was restored afterwards.
+- Not run on the lab VM: this step changes rules and the engine only; the log formats it reads are the ones already validated on the real Ubuntu target in earlier steps.
+
+**Problems & lessons**
+- **Bug found by a scenario.** In a distinct window the cooldown identity was the counted value, so a second event with an already-counted name re-raised the alert (`ssh-user-enumeration/attack.log` expected 1 alert and got 2). Fixed in both stores (the event is the trigger), with a contract test that failed first on memory, then passed on memory and Redis.
+- **A mislabelled benign scenario.** `ssh-bruteforce/benign.log` contained ten distinct `Invalid user probeN` lines, which *is* an enumeration. It became `negative-username-probes.log` (`# also: ssh-user-enumeration=1`), which is what the new kind is for.
+- **A silent mutation script.** My first engine mutation did not apply and the suite stayed green ("42 passed"): a mutation check must assert that the file changed. Re-applied with a diff, the expected test failed.
+- Adding rules changed what old scenarios produce: `test_alerts_of_other_rules_must_be_declared` and two integration tests read only `# expect` and ignored `# also`; they passed without services and failed with them. Lesson: run the whole suite **with** the services before pushing.
+
+**Next**: the time-of-day condition (off-hours login), then M3 enrichment.
+
+---
+
 ## 2026-09-25 — M2 (step 3) — Five Linux privilege and persistence rules (PR #15)
 
 **Housekeeping** — PR #14 (administrative events) was merged into `main` on request; its CI is green.

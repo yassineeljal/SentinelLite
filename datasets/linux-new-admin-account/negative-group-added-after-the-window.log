@@ -1,0 +1,6 @@
+# expect: 0
+# also: linux-new-account=1, linux-privileged-group-member=1
+# description: The group change comes sixteen minutes after the account: the sequence rule stays silent, the two single-step rules do not.
+2026-09-24T10:00:00+00:00 prod-web-01 useradd[5378]: new group: name=evil, GID=1000
+2026-09-24T10:00:00+00:00 prod-web-01 useradd[5381]: new user: name=evil, UID=1000, GID=1000, home=/home/evil, shell=/bin/bash, from=none
+2026-09-24T10:16:00+00:00 prod-web-01 gpasswd[5384]: user evil added by root to group sudo

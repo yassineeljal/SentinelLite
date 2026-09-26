@@ -1,4 +1,5 @@
 # expect: 3
+# also: ssh-user-enumeration=1
 # description: Three attacks: a burst of 8 failures (one alert thanks to the cooldown), the same source again ten minutes later, and another source using invalid users.
 # Three attacks: a burst (8 failures, ONE alert thanks to the cooldown), the same source
 # again 10 minutes later (cooldown elapsed: second alert), and another source using invalid users.

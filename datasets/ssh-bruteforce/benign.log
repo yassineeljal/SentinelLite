@@ -1,5 +1,5 @@
 # expect: 0
-# description: Typos, sub-threshold probes, distributed noise, slow guessing and IPv6: no alert.
+# description: Typos, sub-threshold failures, distributed noise, slow guessing and IPv6: no alert.
 # Legitimate typos, sub-threshold probes, distributed noise, slow guessing and IPv6: no alert.
 2026-09-24T15:00:00+00:00 ubuntu-01 sshd[821]: Failed password for alice from 10.0.0.5 port 41000 ssh2
 2026-09-24T15:00:05+00:00 ubuntu-01 sshd[822]: Failed password for alice from 10.0.0.5 port 41001 ssh2
@@ -17,16 +17,6 @@
 2026-09-24T15:15:00+00:00 ubuntu-01 sshd[834]: Failed password for root from 2001:db8::1 port 44000 ssh2
 2026-09-24T15:15:02+00:00 ubuntu-01 sshd[835]: Failed password for root from 2001:db8::1 port 44001 ssh2
 2026-09-24T15:15:04+00:00 ubuntu-01 sshd[836]: Failed password for root from 2001:db8::1 port 44002 ssh2
-2026-09-24T15:20:00+00:00 ubuntu-01 sshd[837]: Invalid user probe0 from 198.51.100.77 port 45000
-2026-09-24T15:20:01+00:00 ubuntu-01 sshd[838]: Invalid user probe1 from 198.51.100.77 port 45001
-2026-09-24T15:20:02+00:00 ubuntu-01 sshd[839]: Invalid user probe2 from 198.51.100.77 port 45002
-2026-09-24T15:20:03+00:00 ubuntu-01 sshd[840]: Invalid user probe3 from 198.51.100.77 port 45003
-2026-09-24T15:20:04+00:00 ubuntu-01 sshd[841]: Invalid user probe4 from 198.51.100.77 port 45004
-2026-09-24T15:20:05+00:00 ubuntu-01 sshd[842]: Invalid user probe5 from 198.51.100.77 port 45005
-2026-09-24T15:20:06+00:00 ubuntu-01 sshd[843]: Invalid user probe6 from 198.51.100.77 port 45006
-2026-09-24T15:20:07+00:00 ubuntu-01 sshd[844]: Invalid user probe7 from 198.51.100.77 port 45007
-2026-09-24T15:20:08+00:00 ubuntu-01 sshd[845]: Invalid user probe8 from 198.51.100.77 port 45008
-2026-09-24T15:20:09+00:00 ubuntu-01 sshd[846]: Invalid user probe9 from 198.51.100.77 port 45009
 2026-09-24T16:00:00+00:00 ubuntu-01 sshd[847]: Failed password for root from 198.51.100.4 port 46000 ssh2
 2026-09-24T16:20:00+00:00 ubuntu-01 sshd[848]: Failed password for root from 198.51.100.4 port 46001 ssh2
 2026-09-24T16:40:00+00:00 ubuntu-01 sshd[849]: Failed password for root from 198.51.100.4 port 46002 ssh2

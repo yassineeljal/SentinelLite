@@ -1,0 +1,20 @@
+id: linux-new-admin-account
+title: New account granted administrative rights
+description: >
+  An account was created and, within fifteen minutes, added to a group that gives administrative
+  rights on the same host (sudo, admin, wheel, root): the signature of a backdoor administrator.
+  The two steps also raise linux-new-account and linux-privileged-group-member separately; this
+  rule is the correlation. Matched per account name and host.
+mitre: [T1136.001, T1098.007]
+severity: 85
+type: sequence
+group_by: [user_name, host]
+sequence:
+  window: 15m
+  first:
+    match: {source: linux.auth, action: account_created}
+  then:
+    match:
+      source: linux.auth
+      action: group_member_added
+      extra.group: [sudo, admin, wheel, root]

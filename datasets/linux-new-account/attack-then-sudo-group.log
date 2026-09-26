@@ -1,5 +1,5 @@
 # expect: 1
-# also: linux-privileged-group-member=1
+# also: linux-new-admin-account=1, linux-privileged-group-member=1
 # description: A new account immediately added to sudo: the account rule and the privileged-group rule both fire.
 2026-09-24T10:00:00+00:00 prod-web-01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/sbin/useradd -m evil
 2026-09-24T10:00:00+00:00 prod-web-01 useradd[3042]: new group: name=evil, GID=1000

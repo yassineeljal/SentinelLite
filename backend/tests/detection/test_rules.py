@@ -244,3 +244,110 @@ def test_exclude_uses_the_same_fields_and_is_optional() -> None:
 def test_exclude_is_validated_like_match(exclude: dict[str, Any]) -> None:
     with pytest.raises(RuleLoadError):
         Rule.model_validate(rule_dict(exclude=exclude))
+
+
+# --- distinct aggregation and sequence rules ---------------------------------------------------
+
+ENUMERATION = """
+id: ssh-enum
+title: User enumeration
+mitre: [T1110.003]
+severity: 55
+type: threshold
+match: {source: linux.auth, action: [login_failed, invalid_user]}
+group_by: [src_ip]
+threshold: {count: 6, window: 60s, distinct: user_name}
+"""
+
+SEQUENCE = """
+id: success-after-failures
+title: Login success after failures
+mitre: [T1110, T1078]
+severity: 80
+type: sequence
+group_by: [src_ip]
+sequence:
+  window: 10m
+  first: {match: {source: linux.auth, action: login_failed}, count: 5}
+  then: {match: {source: linux.auth, action: login_success}}
+"""
+
+
+def test_a_threshold_can_count_distinct_values_of_a_field() -> None:
+    rule = parse_rule_yaml(ENUMERATION)
+
+    assert rule.threshold is not None and rule.threshold.distinct == "user_name"
+    assert (rule.threshold.count, rule.threshold.window_seconds) == (6, 60)
+
+
+def test_distinct_must_name_a_known_field() -> None:
+    with pytest.raises(RuleLoadError, match="usr_name"):
+        parse_rule_yaml(ENUMERATION.replace("distinct: user_name", "distinct: usr_name"))
+
+
+def test_the_threshold_count_is_bounded_by_the_window_capacity() -> None:
+    with pytest.raises(RuleLoadError):
+        parse_rule_yaml(ENUMERATION.replace("count: 6", "count: 9999"))
+
+
+def test_a_sequence_rule_is_parsed_with_its_two_steps() -> None:
+    rule = parse_rule_yaml(SEQUENCE)
+
+    assert rule.type == "sequence" and rule.match == {} and rule.threshold is None
+    assert rule.sequence is not None
+    assert rule.sequence.window_seconds == 600
+    assert rule.sequence.first.count == 5 and rule.sequence.then.count == 1
+    assert rule.sequence.first.match["action"] == "login_failed"
+    assert rule.cooldown_seconds == 600  # defaults to the window, like a threshold rule
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda t: t.replace("sequence:\n  window: 10m\n", "sequence:\n"),  # no window
+        lambda t: t.replace("group_by: [src_ip]\n", ""),  # no group_by
+        lambda t: t.replace("  then: {match: {source: linux.auth, action: login_success}}\n", ""),
+        lambda t: t.replace("action: login_failed", "action: login_failedd"),  # typo in a step
+        lambda t: t.replace("count: 5", "count: 0"),
+        lambda t: t + "match: {action: login_failed}\n",  # top-level match forbidden
+        lambda t: t + "threshold: {count: 3, window: 60s}\n",
+    ],
+)
+def test_invalid_sequence_rules_are_refused(mutate: Any) -> None:
+    with pytest.raises(RuleLoadError):
+        parse_rule_yaml(mutate(SEQUENCE))
+
+
+def test_a_sequence_step_supports_exclude_and_is_validated_like_match() -> None:
+    text = SEQUENCE.replace(
+        "then: {match: {source: linux.auth, action: login_success}}",
+        "then: {match: {source: linux.auth, action: login_success}, exclude: {user_name: backup}}",
+    )
+
+    assert parse_rule_yaml(text).sequence.then.exclude == {"user_name": "backup"}  # type: ignore[union-attr]
+    with pytest.raises(RuleLoadError, match="src_ipp"):
+        parse_rule_yaml(text.replace("user_name: backup", "src_ipp: x"))
+
+
+def test_a_sequence_section_is_not_allowed_on_other_types() -> None:
+    with pytest.raises(RuleLoadError):
+        Rule.model_validate(
+            rule_dict(
+                sequence={
+                    "window": "5m",
+                    "first": {"match": {"action": "login_failed"}},
+                    "then": {"match": {"action": "login_success"}},
+                }
+            )
+        )
+
+
+def test_only_the_first_step_of_a_sequence_can_have_a_count() -> None:
+    """`then` is the event that completes the sequence: a count there would be silently ignored."""
+    with pytest.raises(RuleLoadError, match="then"):
+        parse_rule_yaml(
+            SEQUENCE.replace(
+                "then: {match: {source: linux.auth, action: login_success}}",
+                "then: {match: {source: linux.auth, action: login_success}, count: 3}",
+            )
+        )

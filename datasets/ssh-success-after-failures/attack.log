@@ -1,0 +1,10 @@
+# expect: 1
+# also: ssh-bruteforce=1
+# description: Six quick failures, then the right password: the brute force worked (the brute-force rule fires too).
+2026-09-24T10:00:00+00:00 prod-web-01 sshd[5003]: Failed password for deploy from 203.0.113.7 port 45000 ssh2
+2026-09-24T10:00:03+00:00 prod-web-01 sshd[5006]: Failed password for deploy from 203.0.113.7 port 45003 ssh2
+2026-09-24T10:00:06+00:00 prod-web-01 sshd[5009]: Failed password for deploy from 203.0.113.7 port 45006 ssh2
+2026-09-24T10:00:09+00:00 prod-web-01 sshd[5012]: Failed password for deploy from 203.0.113.7 port 45009 ssh2
+2026-09-24T10:00:12+00:00 prod-web-01 sshd[5015]: Failed password for deploy from 203.0.113.7 port 45012 ssh2
+2026-09-24T10:00:15+00:00 prod-web-01 sshd[5018]: Failed password for deploy from 203.0.113.7 port 45015 ssh2
+2026-09-24T10:00:30+00:00 prod-web-01 sshd[5021]: Accepted password for deploy from 203.0.113.7 port 55018 ssh2

@@ -68,6 +68,7 @@ def _cell(text: str) -> str:
 def render_report(run: BenchmarkRun) -> str:
     attacks = [r for r in run.results if r.scenario.kind == "attack"]
     benign = [r for r in run.results if r.scenario.kind == "benign"]
+    negative = [r for r in run.results if r.scenario.kind == "negative"]
     shared = [r for r in benign if r.scenario.rule_id == SHARED]
     detected = [r for r in attacks if r.alerts.get(r.scenario.rule_id, 0) >= 1]
     noisy = [r for r in benign if r.alerts]
@@ -89,6 +90,8 @@ def render_report(run: BenchmarkRun) -> str:
         f"| Attack scenarios detected | {_pct(len(detected), len(attacks))} |",
         f"| Scenarios matching their expectations (exact alert counts) | "
         f"{_pct(sum(r.passed for r in run.results), len(run.results))} |",
+        f"| Negative scenarios (the rule must stay silent) | {len(negative)} "
+        f"({sum(r.passed for r in negative)}/{len(negative)} as expected) |",
         f"| Benign scenarios | {len(benign)} ({len(shared)} shared across all rules) |",
         f"| Benign scenarios with a false alert | {len(noisy)}/{len(benign)} |",
         f"| Benign events replayed | {sum(r.events for r in benign)} |",
@@ -97,20 +100,24 @@ def render_report(run: BenchmarkRun) -> str:
         "## Per rule",
         "",
         "Benign columns count the rule's own benign scenarios **and** the shared ones: a rule "
-        "must stay silent on all of them.",
+        "must stay silent on all of them. A negative scenario is a near miss: the rule must "
+        "not fire while the related rules fire exactly as declared (e.g. a sequence whose second "
+        "step comes too late).",
         "",
-        "| Rule | MITRE | Attacks detected | Benign clean | False alerts |",
-        "|---|---|---|---|---|",
+        "| Rule | MITRE | Attacks detected | Negatives silent | Benign clean | False alerts |",
+        "|---|---|---|---|---|---|",
     ]
     for rule in sorted(run.rules, key=lambda r: r.id):
         own_attacks = [r for r in attacks if r.scenario.rule_id == rule.id]
         own_detected = [r for r in own_attacks if r.alerts.get(rule.id, 0) >= 1]
+        own_negative = [r for r in negative if r.scenario.rule_id == rule.id]
+        own_silent = [r for r in own_negative if not r.alerts.get(rule.id, 0)]
         relevant = [r for r in benign if r.scenario.rule_id in (rule.id, SHARED)]
         clean = [r for r in relevant if not r.alerts.get(rule.id, 0)]
         wrong = sum(r.alerts.get(rule.id, 0) for r in relevant)
         out.append(
             f"| {rule.id} | {', '.join(rule.mitre)} | {len(own_detected)}/{len(own_attacks)} "
-            f"| {len(clean)}/{len(relevant)} | {wrong} |"
+            f"| {len(own_silent)}/{len(own_negative)} | {len(clean)}/{len(relevant)} | {wrong} |"
         )
 
     out += [

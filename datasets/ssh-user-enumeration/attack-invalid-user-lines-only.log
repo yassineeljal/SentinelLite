@@ -1,0 +1,10 @@
+# expect: 1
+# description: A scanner that only probes user names (Invalid user, pre-auth close): no failed password, so only the enumeration rule fires.
+2026-09-24T10:00:00+00:00 prod-web-01 sshd[5180]: Invalid user admin from 198.51.100.78 port 45177
+2026-09-24T10:00:03+00:00 prod-web-01 sshd[5183]: Invalid user test from 198.51.100.78 port 45180
+2026-09-24T10:00:06+00:00 prod-web-01 sshd[5186]: Invalid user oracle from 198.51.100.78 port 45183
+2026-09-24T10:00:09+00:00 prod-web-01 sshd[5189]: Invalid user git from 198.51.100.78 port 45186
+2026-09-24T10:00:12+00:00 prod-web-01 sshd[5192]: Invalid user pi from 198.51.100.78 port 45189
+2026-09-24T10:00:15+00:00 prod-web-01 sshd[5195]: Invalid user guest from 198.51.100.78 port 45192
+2026-09-24T10:00:18+00:00 prod-web-01 sshd[5198]: Invalid user ubuntu from 198.51.100.78 port 45195
+2026-09-24T10:00:21+00:00 prod-web-01 sshd[5201]: Invalid user postgres from 198.51.100.78 port 45198

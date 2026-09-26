@@ -1,6 +1,7 @@
 """Detection engine: applies rules to normalized events and yields alerts."""
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from hashlib import sha256
@@ -50,11 +51,26 @@ def field_value(event: Event, name: str) -> str | None:
     return _normalize(getattr(event, name))
 
 
+@dataclass(frozen=True)
+class _Step:
+    conditions: list[tuple[str, frozenset[str]]]
+    exclusions: list[tuple[str, frozenset[str]]]
+
+
 class _CompiledRule:
     def __init__(self, rule: Rule) -> None:
         self.rule = rule
         self.conditions = self._compile(rule.match)
         self.exclusions = self._compile(rule.exclude)
+        self.first: _Step | None = None
+        self.then: _Step | None = None
+        if rule.sequence is not None:
+            self.first = _Step(
+                self._compile(rule.sequence.first.match), self._compile(rule.sequence.first.exclude)
+            )
+            self.then = _Step(
+                self._compile(rule.sequence.then.match), self._compile(rule.sequence.then.exclude)
+            )
 
     @staticmethod
     def _compile(mapping: dict[str, Any]) -> list[tuple[str, frozenset[str]]]:
@@ -68,7 +84,15 @@ class _CompiledRule:
     def _holds(event: Event, conditions: list[tuple[str, frozenset[str]]]) -> bool:
         return all(field_value(event, name) in allowed for name, allowed in conditions)
 
+    def step_holds(self, event: Event, step: "_Step") -> bool:
+        if not self._holds(event, step.conditions):
+            return False
+        return not (step.exclusions and self._holds(event, step.exclusions))
+
     def matches(self, event: Event) -> bool:
+        """Is this event relevant to the rule (for a sequence: to either of its steps)?"""
+        if self.first is not None and self.then is not None:
+            return self.step_holds(event, self.first) or self.step_holds(event, self.then)
         if not self._holds(event, self.conditions):
             return False
         return not (self.exclusions and self._holds(event, self.exclusions))
@@ -120,11 +144,12 @@ class DetectionEngine:
             if not compiled.matches(event):
                 continue
             try:
-                alert = (
-                    await self._threshold(compiled, event, ts)
-                    if compiled.rule.type == "threshold"
-                    else await self._match(compiled, event, ts)
-                )
+                if compiled.rule.type == "threshold":
+                    alert = await self._threshold(compiled, event, ts)
+                elif compiled.rule.type == "sequence":
+                    alert = await self._sequence(compiled, event, ts)
+                else:
+                    alert = await self._match(compiled, event, ts)
             except RedisError:
                 raise
             except Exception as exc:
@@ -170,13 +195,20 @@ class DetectionEngine:
             return None
         digest = _group_digest(rule, event, group)
         ts_ms = _to_ms(ts)
+        member, evidence = event.event_id, None
+        if spec.distinct is not None:  # count distinct values of a field, not events
+            value = field_value(event, spec.distinct)
+            if value is None:
+                return None  # nothing to count for this event
+            member, evidence = _digest(value), event.event_id
         result = await self._store.record_and_check(
             f"thr:{rule.id}:{digest}",
-            event.event_id,
+            member,
             ts_ms,
             window_ms=spec.window_seconds * 1000,
             count=spec.count,
             cooldown_ms=rule.cooldown_seconds * 1000,
+            evidence=evidence,
         )
         if not result.hit:
             return None
@@ -191,6 +223,45 @@ class DetectionEngine:
             result.evidence,
             result.count,
         )
+
+    async def _sequence(self, compiled: _CompiledRule, event: Event, ts: datetime) -> Alert | None:
+        """`first` (>= count events) then `then`, per group, within the window.
+
+        The completing event reads the window of the first step BEFORE it is itself recorded as a
+        first-step event, so that one event can never complete a sequence with itself.
+        """
+        rule = compiled.rule
+        spec = rule.sequence
+        if spec is None or compiled.first is None or compiled.then is None:
+            raise RuntimeError(f"sequence rule {rule.id!r} has no sequence spec")
+        group = compiled.group_values(event)
+        if group is None:
+            return None
+        digest = _group_digest(rule, event, group)
+        key = f"seq:{rule.id}:{digest}"
+        ts_ms = _to_ms(ts)
+        window_ms = spec.window_seconds * 1000
+
+        alert: Alert | None = None
+        if compiled.step_holds(event, compiled.then):
+            prior = await self._store.peek(key, ts_ms, window_ms=window_ms)
+            if prior.count >= spec.first.count and await self._store.acquire_cooldown(
+                key, ts_ms, rule.cooldown_seconds * 1000, event.event_id
+            ):
+                alert = self._alert(
+                    compiled,
+                    event,
+                    ts,
+                    group,
+                    _digest(rule.id, digest, event.event_id),
+                    [event.event_id, *prior.evidence],
+                    prior.count + 1,
+                )
+        if compiled.step_holds(event, compiled.first):
+            await self._store.record_and_check(
+                key, event.event_id, ts_ms, window_ms=window_ms, count=1, cooldown_ms=0
+            )
+        return alert
 
     @staticmethod
     def _alert(

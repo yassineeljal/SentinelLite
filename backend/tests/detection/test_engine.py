@@ -458,3 +458,213 @@ async def test_the_exclusion_needs_all_its_conditions_to_hold() -> None:
 
     assert excluded == []
     assert len(other_uid) == 1  # a nologin account with UID 0 is not excluded
+
+
+# --- distinct aggregation ----------------------------------------------------------------------
+
+
+def enumeration_rule(**changes: Any) -> Rule:
+    data: dict[str, Any] = {
+        "id": "ssh-enum",
+        "title": "User enumeration",
+        "mitre": ["T1110.003"],
+        "severity": 55,
+        "type": "threshold",
+        "match": {"source": "linux.auth", "action": ["login_failed", "invalid_user"]},
+        "group_by": ["src_ip"],
+        "threshold": {"count": 6, "window": "60s", "distinct": "user_name"},
+        "cooldown": "300s",
+    }
+    return Rule.model_validate(data | changes)
+
+
+async def test_distinct_users_from_one_source_raise_the_alert_with_one_event_per_user() -> None:
+    eng = engine(enumeration_rule())
+    names = ["root", "admin", "test", "oracle", "git", "pi"]
+
+    alerts = [await eng.evaluate(make_event(i, at=i, user=n)) for i, n in enumerate(names)]
+
+    assert [len(a) for a in alerts] == [0, 0, 0, 0, 0, 1]
+    alert = alerts[5][0]
+    assert alert.match_count == 6
+    assert alert.event_ids == [f"{i:064x}" for i in range(5, -1, -1)]  # newest first
+
+
+async def test_one_user_tried_many_times_is_a_brute_force_not_an_enumeration() -> None:
+    eng = engine(enumeration_rule())
+
+    alerts = [await eng.evaluate(make_event(i, at=i, user="root")) for i in range(30)]
+
+    assert all(a == [] for a in alerts)  # ssh-bruteforce is the rule for that
+
+
+async def test_failed_password_and_invalid_user_lines_of_one_name_count_once() -> None:
+    """sshd writes both `Invalid user X` and `Failed password for invalid user X`."""
+    eng = engine(enumeration_rule())
+    alerts = []
+    for i, name in enumerate(["a", "b", "c", "d", "e"]):
+        alerts += await eng.evaluate(make_event(2 * i, at=2 * i, user=name))
+        alerts += await eng.evaluate(
+            make_event(2 * i + 1, action=Action.INVALID_USER, at=2 * i + 1, user=name)
+        )
+
+    assert alerts == []  # ten events but five distinct names
+
+
+async def test_distinct_groups_and_missing_fields() -> None:
+    eng = engine(enumeration_rule())
+    names = ["a", "b", "c", "d", "e", "f"]
+
+    split = [
+        await eng.evaluate(make_event(i, at=i, user=n, src_ip=f"203.0.113.{i % 2}"))
+        for i, n in enumerate(names)
+    ]
+    nameless = [await eng.evaluate(make_event(50 + i, at=10 + i, user=None)) for i in range(10)]
+
+    assert all(a == [] for a in split)  # three names per source
+    assert all(a == [] for a in nameless)  # no user name: nothing to count
+
+
+async def test_the_enumeration_cooldown_absorbs_the_rest_of_the_scan() -> None:
+    eng = engine(enumeration_rule())
+
+    alerts = [await eng.evaluate(make_event(i, at=i, user=f"user{i}")) for i in range(20)]
+
+    assert sum(len(a) for a in alerts) == 1
+
+
+# --- sequence rules ------------------------------------------------------------------------------
+
+
+def success_after_failures(**changes: Any) -> Rule:
+    data: dict[str, Any] = {
+        "id": "success-after-failures",
+        "title": "Login success after failures",
+        "mitre": ["T1110", "T1078"],
+        "severity": 80,
+        "type": "sequence",
+        "group_by": ["src_ip"],
+        "sequence": {
+            "window": "10m",
+            "first": {"match": {"action": "login_failed"}, "count": 5},
+            "then": {"match": {"action": "login_success"}},
+        },
+    }
+    return Rule.model_validate(data | changes)
+
+
+async def run_events(eng: DetectionEngine, events: list[Event]) -> list[Alert]:
+    found: list[Alert] = []
+    for event in events:
+        found += await eng.evaluate(event)
+    return found
+
+
+def failures(count: int, start: float = 0, ip: str = "203.0.113.7", base: int = 0) -> list[Event]:
+    return [make_event(base + i, at=start + i * 2, src_ip=ip) for i in range(count)]
+
+
+def success(n: int, at: float, ip: str = "203.0.113.7", agent: UUID = AGENT) -> Event:
+    return make_event(n, action=Action.LOGIN_SUCCESS, at=at, src_ip=ip, agent=agent)
+
+
+async def test_a_success_after_enough_failures_raises_the_alert() -> None:
+    eng = engine(success_after_failures())
+
+    alerts = await run_events(eng, [*failures(5), success(100, at=20)])
+
+    assert len(alerts) == 1
+    alert = alerts[0]
+    assert (alert.rule_id, alert.severity, alert.mitre) == (
+        "success-after-failures",
+        80,
+        ["T1110", "T1078"],
+    )
+    assert alert.event_ids[0] == f"{100:064x}"  # the completing event first, then the failures
+    assert alert.event_ids[1:] == [f"{i:064x}" for i in range(4, -1, -1)]
+    assert alert.match_count == 6 and alert.group == {"src_ip": "203.0.113.7"}
+
+
+async def test_too_few_failures_or_a_success_first_do_not_raise_it() -> None:
+    eng = engine(success_after_failures())
+
+    few = await run_events(eng, [*failures(4, ip="203.0.113.1"), success(100, 20, "203.0.113.1")])
+    early = await run_events(
+        eng, [success(200, 0, "203.0.113.2"), *failures(6, 10, "203.0.113.2", base=300)]
+    )
+
+    assert few == [] and early == []  # order matters: failures BEFORE the success
+
+
+async def test_the_success_must_come_inside_the_window() -> None:
+    eng = engine(success_after_failures())
+
+    late = await run_events(eng, [*failures(5), success(100, at=11 * 60)])  # 11 min, window 10 min
+    inside = await run_events(
+        eng, [*failures(5, ip="203.0.113.9", base=500), success(600, at=9 * 60, ip="203.0.113.9")]
+    )
+
+    assert late == [] and len(inside) == 1
+
+
+async def test_a_success_from_another_source_is_unrelated() -> None:
+    eng = engine(success_after_failures())
+
+    alerts = await run_events(eng, [*failures(6), success(100, at=20, ip="198.51.100.5")])
+
+    assert alerts == []
+
+
+async def test_the_sequence_cooldown_and_redelivery() -> None:
+    eng = engine(success_after_failures())
+    first = await run_events(eng, [*failures(5), success(100, at=20)])
+    again = await eng.evaluate(success(101, at=25))  # a second login moments later: same attack
+
+    redelivered = await eng.evaluate(success(100, at=20))  # the trigger comes back after a crash
+
+    assert len(first) == 1 and again == []
+    assert [a.alert_id for a in redelivered] == [first[0].alert_id]
+
+
+async def test_an_event_never_completes_a_sequence_with_itself() -> None:
+    same = success_after_failures(
+        sequence={
+            "window": "10m",
+            "first": {"match": {"action": "login_failed"}, "count": 1},
+            "then": {"match": {"action": "login_failed"}},
+        }
+    )
+    eng = engine(same)
+
+    one = await eng.evaluate(make_event(1, at=0))
+    two = await eng.evaluate(make_event(2, at=1))
+
+    assert one == [] and len(two) == 1  # the second failure follows the first
+
+
+async def test_sequences_are_isolated_by_agent_unless_global() -> None:
+    other = UUID("22222222-2222-2222-2222-222222222222")
+    events = [*failures(5), success(100, at=20, agent=other)]
+
+    per_agent = await run_events(engine(success_after_failures()), events)
+    shared = await run_events(engine(success_after_failures(scope="global")), events)
+
+    assert per_agent == []  # failures seen by one agent, the success by another
+    assert len(shared) == 1
+
+
+async def test_a_step_exclusion_is_honoured() -> None:
+    rule = success_after_failures(
+        sequence={
+            "window": "10m",
+            "first": {"match": {"action": "login_failed"}, "count": 5},
+            "then": {"match": {"action": "login_success"}, "exclude": {"user_name": "backup"}},
+        }
+    )
+    eng = engine(rule)
+
+    alerts = await run_events(
+        eng, [*failures(5), success(100, 20).model_copy(update={"user_name": "backup"})]
+    )
+
+    assert alerts == []

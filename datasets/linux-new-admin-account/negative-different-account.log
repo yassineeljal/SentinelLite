@@ -1,0 +1,6 @@
+# expect: 0
+# also: linux-new-account=1, linux-privileged-group-member=1
+# description: One account is created, ANOTHER account is added to sudo: not the same account.
+2026-09-24T10:00:00+00:00 prod-web-01 useradd[5387]: new group: name=evil, GID=1000
+2026-09-24T10:00:00+00:00 prod-web-01 useradd[5390]: new user: name=evil, UID=1000, GID=1000, home=/home/evil, shell=/bin/bash, from=none
+2026-09-24T10:00:30+00:00 prod-web-01 gpasswd[5393]: user bob added by root to group sudo

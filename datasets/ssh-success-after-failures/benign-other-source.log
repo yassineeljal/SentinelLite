@@ -1,0 +1,8 @@
+# expect: 0
+# description: Failures from one address and a success from another are unrelated.
+2026-09-24T10:00:00+00:00 prod-web-01 sshd[5126]: Failed password for deploy from 203.0.113.50 port 45123 ssh2
+2026-09-24T10:01:40+00:00 prod-web-01 sshd[5129]: Failed password for deploy from 203.0.113.50 port 45126 ssh2
+2026-09-24T10:03:20+00:00 prod-web-01 sshd[5132]: Failed password for deploy from 203.0.113.50 port 45129 ssh2
+2026-09-24T10:05:00+00:00 prod-web-01 sshd[5135]: Failed password for deploy from 203.0.113.50 port 45132 ssh2
+2026-09-24T10:06:40+00:00 prod-web-01 sshd[5138]: Failed password for deploy from 203.0.113.50 port 45135 ssh2
+2026-09-24T10:08:40+00:00 prod-web-01 sshd[5141]: Accepted password for deploy from 10.0.0.5 port 55138 ssh2

@@ -1,0 +1,15 @@
+# expect: 1
+# also: ssh-bruteforce=1
+# description: Six non-existent user names in twelve seconds, two log lines each as sshd writes them (the brute-force rule fires too).
+2026-09-24T10:00:00+00:00 prod-web-01 sshd[5144]: Invalid user admin from 198.51.100.77 port 45141
+2026-09-24T10:00:01+00:00 prod-web-01 sshd[5147]: Failed password for invalid user admin from 198.51.100.77 port 45144 ssh2
+2026-09-24T10:00:02+00:00 prod-web-01 sshd[5150]: Invalid user test from 198.51.100.77 port 45147
+2026-09-24T10:00:03+00:00 prod-web-01 sshd[5153]: Failed password for invalid user test from 198.51.100.77 port 45150 ssh2
+2026-09-24T10:00:04+00:00 prod-web-01 sshd[5156]: Invalid user oracle from 198.51.100.77 port 45153
+2026-09-24T10:00:05+00:00 prod-web-01 sshd[5159]: Failed password for invalid user oracle from 198.51.100.77 port 45156 ssh2
+2026-09-24T10:00:06+00:00 prod-web-01 sshd[5162]: Invalid user git from 198.51.100.77 port 45159
+2026-09-24T10:00:07+00:00 prod-web-01 sshd[5165]: Failed password for invalid user git from 198.51.100.77 port 45162 ssh2
+2026-09-24T10:00:08+00:00 prod-web-01 sshd[5168]: Invalid user pi from 198.51.100.77 port 45165
+2026-09-24T10:00:09+00:00 prod-web-01 sshd[5171]: Failed password for invalid user pi from 198.51.100.77 port 45168 ssh2
+2026-09-24T10:00:10+00:00 prod-web-01 sshd[5174]: Invalid user guest from 198.51.100.77 port 45171
+2026-09-24T10:00:11+00:00 prod-web-01 sshd[5177]: Failed password for invalid user guest from 198.51.100.77 port 45174 ssh2

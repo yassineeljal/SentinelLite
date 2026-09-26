@@ -147,7 +147,9 @@ async def test_alerts_of_other_rules_must_be_declared(tmp_path: Path) -> None:
     lines = "\n".join([FAILED.format(i=i) for i in range(5)] + [ROOT_OK])
     undeclared = scenario_file(tmp_path, "attack.log", f"# expect: 1\n{lines}\n")
     declared = scenario_file(
-        tmp_path, "attack-declared.log", f"# expect: 1\n# also: ssh-bruteforce=1\n{lines}\n"
+        tmp_path,
+        "attack-declared.log",
+        f"# expect: 1\n# also: ssh-bruteforce=1, ssh-success-after-failures=1\n{lines}\n",
     )
 
     silent = await run_scenario(parse_scenario(undeclared, "ssh-root-login"), RULES)
@@ -228,3 +230,57 @@ def test_expected_alerts_combine_the_owner_and_the_declared_others(tmp_path: Pat
 
     assert attack.expected_alerts == {"ssh-root-login": 2, "other": 1}
     assert benign.expected_alerts == {}
+
+
+# --- negative scenarios: the owner must stay silent, related rules may fire as declared ---------
+
+
+def test_a_negative_scenario_expects_zero_from_its_owner_and_may_declare_others(
+    tmp_path: Path,
+) -> None:
+    path = scenario_file(
+        tmp_path,
+        "negative-late.log",
+        "# expect: 0\n# also: ssh-bruteforce=1\nx\n",
+        "ssh-root-login",
+    )
+
+    scenario = parse_scenario(path, "ssh-root-login")
+
+    assert scenario.kind == "negative" and scenario.expect == 0
+    assert scenario.expected_alerts == {"ssh-bruteforce": 1}
+
+
+def test_a_negative_scenario_cannot_expect_alerts_from_its_owner(tmp_path: Path) -> None:
+    path = scenario_file(tmp_path, "negative-oops.log", "# expect: 1\nx\n", "ssh-root-login")
+
+    with pytest.raises(ScenarioError, match="negative"):
+        parse_scenario(path, "ssh-root-login")
+
+
+async def test_a_negative_scenario_fails_if_the_owner_fires_or_an_undeclared_rule_does(
+    tmp_path: Path,
+) -> None:
+    failures = "\n".join(
+        FAILED.format(i=i) for i in range(5)
+    )  # ssh-bruteforce fires, root-login not
+    declared = scenario_file(
+        tmp_path,
+        "negative-a.log",
+        f"# expect: 0\n# also: ssh-bruteforce=1\n{failures}\n",
+        "ssh-root-login",
+    )
+    owner_fires = scenario_file(
+        tmp_path, "negative-b.log", f"# expect: 0\n{ROOT_OK}\n", "ssh-root-login"
+    )
+    undeclared = scenario_file(
+        tmp_path, "negative-c.log", f"# expect: 0\n{failures}\n", "ssh-root-login"
+    )
+
+    good = await run_scenario(parse_scenario(declared, "ssh-root-login"), RULES)
+    bad_owner = await run_scenario(parse_scenario(owner_fires, "ssh-root-login"), RULES)
+    surprise = await run_scenario(parse_scenario(undeclared, "ssh-root-login"), RULES)
+
+    assert good.passed and good.alerts == {"ssh-bruteforce": 1}
+    assert not bad_owner.passed and "ssh-root-login: expected 0" in bad_owner.problems[0]
+    assert not surprise.passed and "ssh-bruteforce" in surprise.problems[0]

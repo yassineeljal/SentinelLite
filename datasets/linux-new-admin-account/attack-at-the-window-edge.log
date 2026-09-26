@@ -1,0 +1,6 @@
+# expect: 1
+# also: linux-new-account=1, linux-privileged-group-member=1
+# description: The group change comes fourteen minutes after the account.
+2026-09-24T10:00:00+00:00 prod-web-01 useradd[5369]: new group: name=evil, GID=1000
+2026-09-24T10:00:00+00:00 prod-web-01 useradd[5372]: new user: name=evil, UID=1000, GID=1000, home=/home/evil, shell=/bin/bash, from=none
+2026-09-24T10:14:00+00:00 prod-web-01 gpasswd[5375]: user evil added by root to group admin
