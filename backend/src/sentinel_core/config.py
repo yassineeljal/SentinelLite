@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     detector_claim_idle_ms: int = Field(default=60_000, ge=0)
     rules_dir: Path = Path("rules")
 
+    # Enrichment (GeoIP now, reputation later). Off by default: it needs a database file, see
+    # docs/OPERATIONS.md. When on, the detector announces new alerts on `alerts.new` and the
+    # enricher worker (which refuses to start without a database) adds context to them.
+    enrichment_enabled: bool = False
+    geoip_city_db: Path | None = None  # MaxMind format: GeoLite2-City or DB-IP City Lite
+    geoip_asn_db: Path | None = None  # MaxMind format: GeoLite2-ASN or DB-IP ASN Lite
+    enricher_batch_size: int = Field(default=100, gt=0)
+    enricher_claim_idle_ms: int = Field(default=60_000, ge=0)
+    alerts_stream_maxlen: int = Field(default=100_000, gt=0)
+
 
 @lru_cache
 def get_settings() -> Settings:
