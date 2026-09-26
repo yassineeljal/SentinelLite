@@ -1,17 +1,21 @@
 """`sentinel alerts list|show` against a real Postgres."""
 
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from sentinel_core import cli
 from sentinel_core.config import get_settings
-from sentinel_core.db.alerts import insert_alerts
+from sentinel_core.db.alerts import insert_alerts, set_enrichment
 from sentinel_core.db.events import insert_events
 from sentinel_core.detection.alerts import Alert
+from sentinel_core.enrichment.enricher import Enrichment
+from sentinel_core.enrichment.geoip import GeoInfo
 from sentinel_core.schema.event import Action, Category, Event, Outcome, Source
 from tests.support import DATABASE_URL
 
@@ -155,4 +159,81 @@ async def test_attacker_controlled_fields_cannot_inject_terminal_escapes(
     for output in (listing, detail):
         assert "\x1b" not in output and "\x07" not in output and "\r" not in output
         assert "\\x1b" in output  # visible, not silently dropped
+    get_settings.cache_clear()
+
+
+# --- enrichment ---------------------------------------------------------------------------------
+
+
+async def enrich(engine: AsyncEngine, alert_id: str, enrichment: Enrichment) -> None:
+    async with async_sessionmaker(engine, expire_on_commit=False).begin() as session:
+        assert await set_enrichment(session, alert_id, enrichment)
+
+
+async def test_show_and_list_display_where_the_source_is(
+    seeded: None,
+    engine: AsyncEngine,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    geo = GeoInfo(
+        country_code="FR",
+        country="France",
+        city="Paris",
+        latitude=48.85,
+        longitude=2.35,
+        asn=64500,
+        as_org="Example Hosting SARL",
+    )
+    await enrich(engine, ALERT_ID, Enrichment(ip_scope="public", geo=geo))
+
+    assert await asyncio.to_thread(cli.main, ["alerts", "show", ALERT_ID[:10]]) == 0
+    shown = capsys.readouterr().out
+    assert await asyncio.to_thread(cli.main, ["alerts", "list"]) == 0
+    listed = capsys.readouterr().out.strip().splitlines()
+
+    assert "from    Paris, France, FR  (48.85, 2.35)  AS64500 Example Hosting SARL" in shown
+    assert listed[0].split()[5] == "FR"  # enriched alert: the country column
+    assert listed[1].split()[5] != "FR"  # the other alert has no country ("-")
+    get_settings.cache_clear()
+
+
+async def test_show_says_when_there_is_nothing_to_show(
+    seeded: None,
+    engine: AsyncEngine,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    await enrich(engine, ALERT_ID, Enrichment(ip_scope="non_public"))
+
+    assert await asyncio.to_thread(cli.main, ["alerts", "show", ALERT_ID[:10]]) == 0
+    non_public = capsys.readouterr().out
+    assert await asyncio.to_thread(cli.main, ["alerts", "show", "cd" * 4]) == 0
+    not_enriched = capsys.readouterr().out
+
+    assert "from    non-public address" in non_public
+    assert "from    not enriched" in not_enriched
+    get_settings.cache_clear()
+
+
+async def test_hostile_values_in_the_enrichment_cannot_inject_terminal_escapes(
+    seeded: None,
+    engine: AsyncEngine,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    hostile = "Paris\x1b]52;c;ZWNobyBwd25lZA==\x07\x1b[2K"
+    async with async_sessionmaker(engine).begin() as session:
+        await session.execute(
+            text("UPDATE alerts SET enrichment = CAST(:e AS jsonb) WHERE alert_id = :id"),
+            {
+                "id": ALERT_ID,
+                "e": json.dumps(
+                    {"ip_scope": "public", "geo": {"city": hostile, "asn": 1, "as_org": hostile}}
+                ),
+            },
+        )
+
+    assert await asyncio.to_thread(cli.main, ["alerts", "show", ALERT_ID[:10]]) == 0
+
+    out = capsys.readouterr().out
+    assert "\x1b" not in out and "\x07" not in out
+    assert "\\x1b" in out
     get_settings.cache_clear()

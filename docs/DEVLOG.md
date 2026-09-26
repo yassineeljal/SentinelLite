@@ -13,6 +13,40 @@ Entry template:
 
 ---
 
+## 2026-09-26 — M3 (step 1) — GeoIP enrichment of alerts (PR #18)
+
+**Housekeeping** — PR #17 (time-of-day conditions and the off-hours rule) was merged into `main` on request; its CI is green.
+
+**What**
+- **Asynchronous enrichment pipeline**: the detector stores an alert, *then* announces it on a new Redis stream `alerts.new` (capped at 100 000 entries); a new `enricher` worker (consumer group `enrichers`) adds context to the stored alert. Migration 0004 adds `alerts.enrichment` (JSON) and `alerts.enriched_at`.
+- **GeoIP from local files** (`enrichment/geoip.py`, `maxminddb`): country, city, coordinates, ASN and organisation for public addresses; private, loopback, link-local, documentation, multicast and reserved ranges are marked `non_public` and never looked up. Works with DB-IP Lite and GeoLite2 files. Values from the files are type-checked, stripped of control characters and bounded.
+- `deploy/fetch-geoip.sh` downloads the free DB-IP Lite city and ASN databases (no account; falls back to last month's file; checks the download); `enricher` service under the compose profile `enrichment`; `sentinel alerts list` shows a country column and `alerts show` a `from` line.
+- Docs: new `docs/ENRICHMENT.md`, `OPERATIONS.md`, `ARCHITECTURE.md` (component text, data model, ADR 30). Data by DB-IP.com under CC BY 4.0: the attribution is in the docs and in `deploy/geoip/ATTRIBUTION.txt`.
+
+**Design notes**
+- **Never on the detection path.** Detection and storage cannot wait for context: a missing database or a dead enricher costs context, not alerts. If announcing fails after the commit, the batch is retried and the same event re-raises the same alert (a no-op in the table), which is announced again. A test probes the database *at the moment of the announcement* to prove the alert is already stored.
+- **Capped stream instead of backpressure.** Unlike `events.raw`, dropping an announcement loses nothing that cannot be redone, so `alerts.new` is capped (approximate trim) rather than blocking the detector.
+- **Fail loud.** The enricher exits with the reason if enrichment is disabled or a database is missing, corrupt or of the wrong kind (an ASN file given as the city one). Verified on the real stack.
+- **Off by default.** It needs a ~130 MB download and a compose profile; `.mmdb` files and `deploy/geoip/` are git-ignored.
+
+**How verified**
+- Local: `ruff`, `mypy --strict` clean; **680 tests pass** with real Redis and Postgres (439 pass, 241 skipped without services). Tests build tiny MaxMind-format databases with `mmdb-writer` (dev dependency), so no real database is needed or committed: 22 GeoIP tests (public / private / reserved / IPv6, partial records, hostile values, wrong or missing files, closing), enricher unit tests, 11 integration tests (attack → alert → enrichment, private and unknown sources, redelivery, garbage and unknown alerts, database failure then retry, blip while announcing, cap) and 3 CLI tests (including terminal-escape injection through a hostile city name).
+- Migration 0004 applied, reverted and re-applied on a fresh database; `alembic check` clean.
+- **Nine mutation checks**: announcing before persisting, looking up private addresses, treating everything as public, removing the cap, one bad record blocking a batch, a garbage entry not tolerated, an UPDATE touching every alert, control characters kept, the CLI printing the city unsanitised. Eight were caught at once; **one survived** (a record that cannot be enriched blocking the others): no test covered it, so one was added and the mutation is now caught.
+- **Real stack** (Docker on OrbStack, real DB-IP Lite files, 121 MB + 9 MB): migration applied on the existing database, then six failed logins per address sent through `POST /v1/ingest`: `185.220.101.1` → Berlin, DE, AS60729; `8.8.8.8` → US, AS15169 Google; `5.5.5.5` → DE; `192.168.139.50` → `non_public`. Older alerts (sudo rules, no source address) show `not enriched`. `alerts.new` ended empty with nothing pending. Starting the enricher with a missing database exits with a clear error; with enrichment disabled it exits 1. The test agent was revoked afterwards.
+
+**Problems & lessons**
+- **Geolocation is approximate, and the real data showed it**: `1.1.1.1` (Cloudflare anycast) is placed in Sydney and Google's IPv6 DNS in Montreal. Written in `ENRICHMENT.md` before the impossible-travel rule depends on it: that rule will need a margin and must say it is a lead, not proof.
+- `ipaddress.is_global` is true for multicast (224.0.0.1): a test caught it, and multicast is excluded explicitly.
+- My first backup scheme for mutation checks used `basename`, and two files are called `enricher.py`: a restore overwrote `enrichment/enricher.py` with the worker's code (import error, caught immediately, file rewritten from the earlier listing). Backups now keep the directory structure. Lesson: a mutation harness needs the same care as the code it checks.
+- Ruff and mypy needed a small adjustment for the fixture library (`mmdb-writer` and `netaddr` have no type information: a mypy override limited to those modules).
+
+**Not done / limits**: no backfill of alerts stored before enrichment was enabled; no `alerts.enriched` stream (it comes with its first consumer); no reputation or risk score yet.
+
+**Next**: AbuseIPDB reputation with a cache and quota handling (optional, needs an API key), then the risk score, then the `stateful` impossible-travel rule.
+
+---
+
 ## 2026-09-25 — M2 (step 5) — Time-of-day conditions and the off-hours login rule (PR #17)
 
 **Housekeeping** — PR #16 (distinct aggregation, sequence rules, negative scenarios) was merged into `main` on request; its CI is green.

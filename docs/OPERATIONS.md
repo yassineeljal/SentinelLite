@@ -164,6 +164,19 @@ Rules live in `rules/`, scenarios in `datasets/<rule-id>/{attack,benign}*.log` (
 of the store contract tests runs when `SENTINEL_TEST_REDIS_URL` is set. See
 [`DETECTION.md`](DETECTION.md) for the rule format and how to add a rule.
 
+## Enrichment (GeoIP)
+
+Optional: adds country, city and network to alerts (see [`ENRICHMENT.md`](ENRICHMENT.md)). Run
+`deploy/fetch-geoip.sh`, set `SENTINEL_ENRICHMENT_ENABLED=true` and `COMPOSE_PROFILES=enrichment`
+in `deploy/.env`, then `docker compose up -d --build`. The `enricher` service exits at startup with
+the reason if a database is missing. Data by DB-IP.com (CC BY 4.0).
+
+```bash
+docker compose logs -f enricher                              # "batch: n enriched, ..."
+docker compose exec redis redis-cli xlen alerts.new          # announcements waiting (normally 0)
+docker compose exec api sentinel alerts show <id-prefix>     # the `from` line
+```
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
@@ -178,4 +191,6 @@ of the store contract tests runs when `SENTINEL_TEST_REDIS_URL` is set. See
 | `detector` exits at startup | Invalid or empty rule set: the log lists every faulty file. Fix `rules/` and restart |
 | `events.normalized` keeps growing | The detector is down or slower than the normalizer; the normalizer pauses at the watermark |
 | Events missing but the stream is empty | Look in `events_dead_letter` (malformed line or source without a normalizer), or the line was well-formed with nothing to model |
+| `enricher` exits at startup | Enrichment disabled (`SENTINEL_ENRICHMENT_ENABLED`), or a GeoIP database is missing / not a database / of the wrong kind: the log names the file. Run `deploy/fetch-geoip.sh` |
+| Alerts show `not enriched` | The enricher is not running (`--profile enrichment`), was enabled after the alert, or the alert has no source address (sudo, account rules) |
 | `events_default` keeps growing | Events are dated outside yesterday..today+7: wrong agent clock, or replayed old logs |

@@ -71,8 +71,33 @@ services:
       <<: *database-url
       SENTINEL_REDIS_URL: redis://redis:6379/0
       SENTINEL_RULES_DIR: /app/rules
+      # When true, new alerts are announced on `alerts.new` for the enricher (profile below).
+      SENTINEL_ENRICHMENT_ENABLED: ${SENTINEL_ENRICHMENT_ENABLED:-false}
     volumes:
       - ../rules:/app/rules:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Adds GeoIP context to stored alerts (consumes alerts.new). Optional: needs the databases from
+  # `deploy/fetch-geoip.sh`; start it with `docker compose --profile enrichment up -d` (or set
+  # COMPOSE_PROFILES=enrichment and SENTINEL_ENRICHMENT_ENABLED=true in deploy/.env). It refuses to
+  # start without a readable database rather than run and enrich nothing.
+  enricher:
+    profiles: ["enrichment"]
+    build: *app-build
+    command: ["python", "-m", "sentinel_core.workers.enricher"]
+    environment:
+      <<: *database-url
+      SENTINEL_REDIS_URL: redis://redis:6379/0
+      SENTINEL_ENRICHMENT_ENABLED: "true"
+      SENTINEL_GEOIP_CITY_DB: /geoip/dbip-city-lite.mmdb
+      SENTINEL_GEOIP_ASN_DB: /geoip/dbip-asn-lite.mmdb
+    volumes:
+      - ./geoip:/geoip:ro
     depends_on:
       migrate:
         condition: service_completed_successfully

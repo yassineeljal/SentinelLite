@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import re
 import sys
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -93,7 +94,8 @@ async def _alerts(args: argparse.Namespace, sessions: async_sessionmaker[AsyncSe
             for a in await list_alerts(session, limit=args.limit, rule_id=args.rule):
                 print(
                     f"{a.ts:%Y-%m-%d %H:%M:%S}  {a.severity:>3}  {sanitize(a.rule_id):<20} "
-                    f"{sanitize(a.src_ip):<16} {sanitize(a.host):<14} {sanitize(a.user_name):<10} "
+                    f"{sanitize(a.src_ip):<16} {sanitize(a.country_code):<3} "
+                    f"{sanitize(a.host):<14} {sanitize(a.user_name):<10} "
                     f"x{a.match_count:<3} {a.alert_id[:12]}"
                 )
             return 0
@@ -118,6 +120,7 @@ async def _alerts(args: argparse.Namespace, sessions: async_sessionmaker[AsyncSe
         print(f"id      {a.alert_id}")
         print(f"time    {a.ts:%Y-%m-%d %H:%M:%S} UTC (stored {a.created_at:%H:%M:%S})")
         print(f"who     {group}  host={sanitize(a.host)}  user={sanitize(a.user_name)}")
+        print(f"from    {_where(detail.enrichment)}")
         print(f"count   {a.match_count} event(s), {len(detail.evidence)} shown")
         if detail.detection_latency is not None:
             ms = detail.detection_latency.total_seconds() * 1000
@@ -126,6 +129,26 @@ async def _alerts(args: argparse.Namespace, sessions: async_sessionmaker[AsyncSe
         for e in detail.evidence:
             print(f"  {e.ts:%H:%M:%S}  {sanitize(e.action):<13} {sanitize(e.raw)}")
         return 0
+
+
+def _where(enrichment: dict[str, Any] | None) -> str:
+    """One line about the source address from the stored enrichment (all values sanitised)."""
+    if enrichment is None:
+        return "not enriched (no source address, or the enricher has not run yet)"
+    if enrichment.get("ip_scope") == "non_public":
+        return "non-public address (private, loopback or reserved): no location"
+    geo = enrichment.get("geo")
+    if not isinstance(geo, dict) or not geo:
+        return "public address, unknown to the GeoIP databases"
+    place = ", ".join(
+        sanitize(str(geo[key])) for key in ("city", "country", "country_code") if geo.get(key)
+    )
+    parts = [place or "location unknown"]
+    if geo.get("latitude") is not None and geo.get("longitude") is not None:
+        parts.append(f"({float(geo['latitude']):.2f}, {float(geo['longitude']):.2f})")
+    if geo.get("asn") is not None:
+        parts.append(f"AS{int(geo['asn'])} {sanitize(str(geo.get('as_org') or ''))}".rstrip(" -"))
+    return "  ".join(parts)
 
 
 def main(argv: list[str] | None = None) -> int:

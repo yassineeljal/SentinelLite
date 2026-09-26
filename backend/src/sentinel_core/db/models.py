@@ -122,3 +122,7 @@ class AlertRecord(Base):
     event_ids: Mapped[list[str]] = mapped_column(JSONB)
     match_count: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Added after the alert was stored, by the enricher (see enrichment/): NULL until then, and
+    # for alerts without a source address.
+    enrichment: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
+    enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)

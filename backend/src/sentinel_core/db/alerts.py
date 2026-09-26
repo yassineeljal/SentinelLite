@@ -1,5 +1,6 @@
 """Persistence and queries for alerts."""
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from sentinel_core.db.models import AlertRecord
 from sentinel_core.detection.alerts import Alert
+from sentinel_core.enrichment.enricher import Enrichment
 
 
 class AmbiguousAlertId(Exception):
@@ -28,6 +30,7 @@ class AlertSummary:
     host: str | None
     user_name: str | None
     match_count: int
+    country_code: str | None  # from the enrichment, when there is one
 
 
 @dataclass(frozen=True)
@@ -48,6 +51,7 @@ class AlertDetail:
     evidence: list[EvidenceEvent]  # oldest first
     # Time between the server receiving the triggering line and the alert being stored.
     detection_latency: timedelta | None
+    enrichment: dict[str, Any] | None  # as stored; None until the enricher has run
 
 
 async def insert_alerts(session: AsyncSession, alerts: list[Alert]) -> None:
@@ -77,9 +81,21 @@ async def insert_alerts(session: AsyncSession, alerts: list[Alert]) -> None:
     )
 
 
+async def set_enrichment(session: AsyncSession, alert_id: str, enrichment: Enrichment) -> bool:
+    """Attach (or replace) the enrichment of a stored alert. False if the alert does not exist."""
+    result = await session.execute(
+        text(
+            "UPDATE alerts SET enrichment = CAST(:enrichment AS jsonb), enriched_at = now() "
+            "WHERE alert_id = :alert_id"
+        ),
+        {"alert_id": alert_id, "enrichment": json.dumps(enrichment.model_dump(mode="json"))},
+    )
+    return bool(getattr(result, "rowcount", 0))
+
+
 _SUMMARY_COLUMNS = (
     "alert_id, rule_id, title, severity, ts, created_at, host(src_ip) AS src_ip, host, user_name,"
-    " match_count"
+    " match_count, enrichment->'geo'->>'country_code' AS country_code"
 )
 
 
@@ -95,6 +111,7 @@ def _summary(row: Any) -> AlertSummary:
         host=row.host,
         user_name=row.user_name,
         match_count=row.match_count,
+        country_code=row.country_code,
     )
 
 
@@ -117,7 +134,8 @@ async def get_alert(session: AsyncSession, alert_id_prefix: str) -> AlertDetail 
     matches = (
         await session.execute(
             text(
-                f"SELECT {_SUMMARY_COLUMNS}, mitre, group_values, event_ids FROM alerts "  # noqa: S608
+                f"SELECT {_SUMMARY_COLUMNS}, mitre, group_values, event_ids, enrichment "  # noqa: S608
+                "FROM alerts "
                 "WHERE alert_id LIKE :prefix LIMIT 2"
             ),
             {"prefix": f"{alert_id_prefix}%"},
@@ -158,4 +176,5 @@ async def get_alert(session: AsyncSession, alert_id_prefix: str) -> AlertDetail 
         group=dict(row.group_values),
         evidence=evidence,
         detection_latency=latency,
+        enrichment=dict(row.enrichment) if row.enrichment is not None else None,
     )
