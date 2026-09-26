@@ -13,6 +13,39 @@ Entry template:
 
 ---
 
+## 2026-09-26 — M3 (step 2) — AbuseIPDB reputation with cache, budget and circuit breaker (PR #19)
+
+**Housekeeping** — PR #18 (GeoIP enrichment) was merged into `main` on request; its CI is green.
+
+**What**
+- **`AbuseIpDbClient`** (`enrichment/abuseipdb.py`, `httpx`): asks AbuseIPDB how badly a public address has been reported (score 0-100, reports, distinct reporters, last report, usage type, ISP, Tor, whitelisted). Key in a header only; HTTPS only; redirects never followed; a timeout of 5 s; every failure mapped to a typed error (quota, key refused, bad request, unavailable).
+- **`ReputationService`** (`enrichment/reputation.py`): a Redis **cache** (24 h, shared by all workers), a **daily budget** (default 900, under the free plan's 1000) and a **circuit breaker** (a `blocked` key with a reason and a duration). Everything that can go wrong ends as "no reputation"; Redis errors still propagate so that the batch is retried.
+- The enrichment JSON gains `reputation`; the enricher only ever asks for **public** addresses. `sentinel alerts list` shows an abuse-score column and `alerts show` an `abuse` line.
+- **Opt-in**: nothing changes without `SENTINEL_ABUSEIPDB_API_KEY` (an empty value, as docker compose passes an unset variable, means off). Docs: `ENRICHMENT.md` (privacy first), `OPERATIONS.md`, ADR 31, `.env.example`. `httpx` moved from dev to runtime dependencies.
+
+**Design notes**
+- **This is the one place an address leaves the machine**, so the docs say so first, the feature is off by default, and private/loopback/reserved/multicast addresses are refused twice (enricher, then client before it builds a request), with tests.
+- **Failures cost one call, not one per alert.** A quota answer pauses for the time the provider gives (`Retry-After`, else `X-RateLimit-Reset`, else until midnight UTC), a refused key pauses 1 h and logs one ERROR, an outage pauses 60 s. Failures are never cached.
+- **A lookup that failed is not retried later**: that alert stays without a reputation (documented). The alert is stored before enrichment starts, so it is never lost or delayed.
+- The key is a `SecretStr`; it never appears in a URL, an error, a repr or a log (checked by tests and by grepping the real container logs and the tracked files).
+
+**How verified**
+- `ruff`, `mypy --strict` clean; **747 tests pass** with real Redis and Postgres (490 pass, 257 skipped without services). 50 new tests for the client (parsing, headers, quota headers, every status, malformed answers, hostile text, redirects, key hygiene) and the service (cache, TTL, budget and its daily reset, pauses and their durations, log-once, corrupt cache), plus pipeline, CLI and config tests.
+- **Fifteen mutation checks** on the new code (cache never read, pause ignored, budget not enforced, quota answer not pausing, cache without expiry, key not sent, key also in the URL, private addresses sent, redirects followed, score not bounded, 403 not treated as a refused key, http accepted, non-public looked up, Redis errors swallowed...). Eleven were caught at once. **Four survived and were investigated**: redirects and Redis errors were untested (two tests added, both mutations now caught); the score bound was masked because my malformed bodies also lacked required fields, which exposed a real defect (a `ValidationError` from building the model could escape `_parse` instead of becoming `Unavailable`), now fixed and tested. Two mutants remain and are equivalent: logging the pause on every call (the pause check already prevents a second call) and the score bound in the client (the `Reputation` model bounds it as well).
+- **Real API and real stack**: one probe first (to read the real response and the `X-RateLimit-*` headers), then failures from `185.220.101.1`, `8.8.8.8` and `192.168.139.50` through the ingestion API. Results: `185.220.101.1` → 100/100, 329 reports by 113 users, Tor exit; `8.8.8.8` → 0 (whitelisted); the private address → no reputation, never sent. A second agent attacking the same two addresses produced two more enriched alerts **without any new API call** (the quota counter stayed at 2 for 4 public alerts; both cache keys had a 24 h TTL). A wrong key answers 401 and an invalid address 422, as the client assumes. The key does not appear in any container log (enricher, detector, API, normalizer) nor in any tracked file. Test agents revoked.
+
+**Problems & lessons**
+- **A mutation that survives is information.** The score-bound mutant looked harmless and hid a real gap: tests that give several reasons to fail at once prove nothing about each reason. Malformed-answer cases must be otherwise valid.
+- An unset variable in docker compose (`${VAR:-}`) reaches the application as an empty string, which would have started the client with an empty key: an empty key now means "off" (config test).
+- The AbuseIPDB score is a report-based signal: the free plan, shared addresses and whitelisting make it context for a human, not a verdict (documented in `ENRICHMENT.md`).
+- The API key was given in the chat: it went straight into the git-ignored `deploy/.env` and nowhere else. It remains in the local conversation transcript; regenerating it on abuseipdb.com is a cheap precaution.
+
+**Not done / limits**: no retry of failed lookups; no backfill; one provider; no risk score yet.
+
+**Next**: the risk score, combining severity, reputation and location into one number per alert, then the `stateful` impossible-travel rule.
+
+---
+
 ## 2026-09-26 — M3 (step 1) — GeoIP enrichment of alerts (PR #18)
 
 **Housekeeping** — PR #17 (time-of-day conditions and the off-hours rule) was merged into `main` on request; its CI is green.

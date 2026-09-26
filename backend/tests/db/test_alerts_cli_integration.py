@@ -14,6 +14,7 @@ from sentinel_core.config import get_settings
 from sentinel_core.db.alerts import insert_alerts, set_enrichment
 from sentinel_core.db.events import insert_events
 from sentinel_core.detection.alerts import Alert
+from sentinel_core.enrichment.abuseipdb import Reputation
 from sentinel_core.enrichment.enricher import Enrichment
 from sentinel_core.enrichment.geoip import GeoInfo
 from sentinel_core.schema.event import Action, Category, Event, Outcome, Source
@@ -236,4 +237,61 @@ async def test_hostile_values_in_the_enrichment_cannot_inject_terminal_escapes(
     out = capsys.readouterr().out
     assert "\x1b" not in out and "\x07" not in out
     assert "\\x1b" in out
+    get_settings.cache_clear()
+
+
+async def test_show_and_list_display_the_reputation(
+    seeded: None,
+    engine: AsyncEngine,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    reputation = Reputation(
+        score=100,
+        total_reports=1234,
+        distinct_reporters=56,
+        last_reported_at=datetime(2026, 9, 26, 13, 36, tzinfo=UTC),
+        usage_type="Data Center",
+        isp="Example Hosting",
+        is_tor=True,
+        checked_at=datetime(2026, 9, 26, 15, 0, tzinfo=UTC),
+    )
+    await enrich(engine, ALERT_ID, Enrichment(ip_scope="public", reputation=reputation))
+
+    assert await asyncio.to_thread(cli.main, ["alerts", "show", ALERT_ID[:10]]) == 0
+    shown = capsys.readouterr().out
+    assert await asyncio.to_thread(cli.main, ["alerts", "list"]) == 0
+    listed = capsys.readouterr().out.strip().splitlines()
+
+    assert (
+        "abuse   AbuseIPDB 100/100  1234 report(s) by 56 user(s), last 2026-09-26  "
+        "Data Center  Example Hosting  Tor exit  checked 2026-09-26 15:00Z"
+    ) in shown
+    assert listed[0].split()[6] == "100" and listed[1].split()[6] == "-"
+    get_settings.cache_clear()
+
+
+async def test_show_says_when_there_is_no_reputation(
+    seeded: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert await asyncio.to_thread(cli.main, ["alerts", "show", ALERT_ID[:10]]) == 0
+
+    assert "abuse   no reputation" in capsys.readouterr().out
+    get_settings.cache_clear()
+
+
+async def test_hostile_values_in_the_reputation_cannot_inject_terminal_escapes(
+    seeded: None, engine: AsyncEngine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    hostile = "ISP\x1b]52;c;ZWNobyBwd25lZA==\x07\x1b[2K"
+    stored = {"reputation": {"score": 5, "isp": hostile, "usage_type": hostile}}
+    async with async_sessionmaker(engine).begin() as session:
+        await session.execute(
+            text("UPDATE alerts SET enrichment = CAST(:e AS jsonb) WHERE alert_id = :id"),
+            {"id": ALERT_ID, "e": json.dumps(stored)},
+        )
+
+    assert await asyncio.to_thread(cli.main, ["alerts", "show", ALERT_ID[:10]]) == 0
+
+    out = capsys.readouterr().out
+    assert "\x1b" not in out and "\x07" not in out
     get_settings.cache_clear()

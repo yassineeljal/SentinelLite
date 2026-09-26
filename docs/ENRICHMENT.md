@@ -1,8 +1,9 @@
 # Alert enrichment
 
 Context added to an alert **after** it is stored: where the source address is, and which network
-owns it. Code in `backend/src/sentinel_core/enrichment/` and `workers/enricher.py`. This first
-provider is GeoIP; reputation (AbuseIPDB) and a risk score come next (M3).
+owns it, and how badly it has been reported. Code in `backend/src/sentinel_core/enrichment/` and
+`workers/enricher.py`. Providers: GeoIP (local files) and AbuseIPDB reputation (optional, a web API).
+A risk score combining them comes next (M3).
 
 ```mermaid
 flowchart LR
@@ -11,6 +12,8 @@ flowchart LR
     R --> E[enricher]
     E -->|3. UPDATE enrichment| P
     M[(GeoIP files<br/>mmdb)] --> E
+    A[AbuseIPDB API<br/>optional] --> E
+    C[(Redis<br/>cache + budget)] --- E
 ```
 
 ## Design
@@ -19,8 +22,8 @@ flowchart LR
   `alerts.new`. A missing database, a crashed enricher or (later) a slow reputation API can leave an
   alert without context; it can never lose or delay one. If announcing fails, the batch is retried:
   the same event re-raises the same alert (a no-op in the table) and it is announced again.
-- **Local lookups, nothing leaves the machine.** GeoIP reads files (MaxMind format) with `maxminddb`:
-  no address of yours is ever sent to a third party. Only the two database files are downloaded.
+- **GeoIP is local: nothing leaves the machine.** It reads files (MaxMind format) with `maxminddb`.
+  Reputation is different, see below: it sends the address to a third party.
 - **Idempotent.** Enrichment is a pure function of the source address and the databases, so a
   redelivered announcement rewrites the same result.
 - **Bounded.** `alerts.new` is capped (`SENTINEL_ALERTS_STREAM_MAXLEN`, default 100 000): if the
@@ -43,7 +46,11 @@ flowchart LR
 {
   "ip_scope": "public",
   "geo": {"country_code": "DE", "country": "Germany", "city": "Berlin",
-          "latitude": 52.52, "longitude": 13.405, "asn": 60729, "as_org": "Stiftung Erneuerbare Freiheit"}
+          "latitude": 52.52, "longitude": 13.405, "asn": 60729, "as_org": "Stiftung Erneuerbare Freiheit"},
+  "reputation": {"source": "abuseipdb", "score": 100, "total_reports": 329, "distinct_reporters": 113,
+                 "last_reported_at": "2026-09-26T13:36:45Z", "usage_type": "University/College/School",
+                 "isp": "Artikel10 e.V.", "is_tor": true, "is_whitelisted": false,
+                 "checked_at": "2026-09-26T20:29:31Z"}
 }
 ```
 
@@ -51,7 +58,10 @@ flowchart LR
   and other reserved ranges (there is nothing to look up: `geo` is `null`). A lab attacker on
   `192.168.x.x` is therefore `non_public`.
 - `geo` is `null` for a public address the databases do not know; any field of it may be missing.
-- `sentinel alerts list` shows a country column; `sentinel alerts show` prints a `from` line.
+- `reputation` is present only for public addresses, only when a key is configured and the provider
+  answered; `checked_at` is when the provider was asked (a cached answer is up to 24 h old).
+- `sentinel alerts list` shows a country and an abuse-score column; `sentinel alerts show` prints a
+  `from` and an `abuse` line.
 
 ## Set it up
 
@@ -67,9 +77,46 @@ Alerts stored before enrichment was enabled stay without context (there is no ba
 Any MaxMind-format database works (GeoLite2-City / GeoLite2-ASN too): set
 `SENTINEL_GEOIP_CITY_DB` / `SENTINEL_GEOIP_ASN_DB`.
 
+## Reputation (AbuseIPDB)
+
+**Privacy first: this is the one place an address leaves the machine.** With a key configured, the
+*public* source address of an alert is sent to abuseipdb.com (over HTTPS) to ask how many people
+reported it. It is off unless `SENTINEL_ABUSEIPDB_API_KEY` is set. Private, loopback, reserved and
+multicast addresses are never sent: this is checked twice (in the enricher and again in the client,
+which refuses them before building a request) and covered by tests.
+
+```bash
+# deploy/.env (never committed): a free key from abuseipdb.com -> Account -> API
+SENTINEL_ABUSEIPDB_API_KEY=...
+# optional: SENTINEL_ABUSEIPDB_DAILY_LIMIT=900  (free plan: 1000 requests a day)
+docker compose up -d --build enricher
+```
+
+How a lookup goes, in order:
+
+1. **Cache** (Redis, 24 h, shared by all workers): an address seen recently is not asked again.
+2. **Pause active?** After a problem the enricher stops asking for a while (below), so that one
+   incident does not cost one timeout per alert.
+3. **Daily budget** (default 900, kept below the plan's 1000; a counter per UTC day): when spent,
+   lookups pause until midnight UTC. Cached answers keep being served.
+4. **The request**, 5 s timeout, key in a header (never in the URL, an error message or a log).
+
+| Situation | What happens |
+|---|---|
+| HTTP 429, or the last request of the period (`X-RateLimit-Remaining: 0`) | Pause for `Retry-After` / until `X-RateLimit-Reset`, else until midnight UTC |
+| HTTP 401/403 (key refused) | ERROR logged once, pause 1 h |
+| Network error, timeout, 5xx, or an answer that does not match the documented format | Pause 60 s, nothing cached |
+| HTTP 422 (address refused) | That alert only; no pause |
+| Any of the above | The alert keeps its GeoIP context and has no `reputation`. It is never lost, and no retry is scheduled |
+
+The answer is untrusted: it is parsed strictly (integer score 0-100, non-negative counts, valid
+dates), its text is stripped of control characters and truncated, and redirects are never followed
+(the key must not travel to another host). Redis errors are not swallowed: the batch is retried.
+
 ## Data and licence
 
-IP geolocation data by [DB-IP](https://db-ip.com), licensed under the
+Reputation data comes from [AbuseIPDB](https://www.abuseipdb.com) (see their terms for the free
+plan). IP geolocation data by [DB-IP](https://db-ip.com), licensed under the
 [Creative Commons Attribution 4.0](https://creativecommons.org/licenses/by/4.0/) license. The
 attribution must stay wherever the data is shown (the dashboard will carry it). The files are
 ignored by Git and never committed.
@@ -83,4 +130,10 @@ ignored by Git and never committed.
   never as proof: rules that will depend on it (impossible travel) must say so and use a margin.
 - The free databases have a city-level precision at best, and no accuracy radius is stored.
 - The country is not a risk signal by itself. A risk score will combine several signals (M3).
-- No backfill of old alerts, no reverse DNS, no reputation yet.
+- **A reputation is a lead, not a verdict.** AbuseIPDB scores come from user reports: an address
+  that only scanned once may score 0, and shared addresses (NAT, VPN exits, cloud hosts) can score
+  high because of someone else. A score of 0 for `8.8.8.8` (whitelisted) is right; a score of 100 for a
+  Tor exit is right and says nothing about *this* attempt. It will be one input of the risk score.
+- A failed lookup (quota, outage) is not retried later: that alert stays without a reputation. The
+  cache means the next alert from the same address gets one once the provider answers again.
+- No backfill of old alerts, no reverse DNS, one reputation provider.

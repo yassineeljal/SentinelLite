@@ -95,6 +95,7 @@ async def _alerts(args: argparse.Namespace, sessions: async_sessionmaker[AsyncSe
                 print(
                     f"{a.ts:%Y-%m-%d %H:%M:%S}  {a.severity:>3}  {sanitize(a.rule_id):<20} "
                     f"{sanitize(a.src_ip):<16} {sanitize(a.country_code):<3} "
+                    f"{'-' if a.abuse_score is None else a.abuse_score:>3} "
                     f"{sanitize(a.host):<14} {sanitize(a.user_name):<10} "
                     f"x{a.match_count:<3} {a.alert_id[:12]}"
                 )
@@ -121,6 +122,7 @@ async def _alerts(args: argparse.Namespace, sessions: async_sessionmaker[AsyncSe
         print(f"time    {a.ts:%Y-%m-%d %H:%M:%S} UTC (stored {a.created_at:%H:%M:%S})")
         print(f"who     {group}  host={sanitize(a.host)}  user={sanitize(a.user_name)}")
         print(f"from    {_where(detail.enrichment)}")
+        print(f"abuse   {_reputation(detail.enrichment)}")
         print(f"count   {a.match_count} event(s), {len(detail.evidence)} shown")
         if detail.detection_latency is not None:
             ms = detail.detection_latency.total_seconds() * 1000
@@ -148,6 +150,29 @@ def _where(enrichment: dict[str, Any] | None) -> str:
         parts.append(f"({float(geo['latitude']):.2f}, {float(geo['longitude']):.2f})")
     if geo.get("asn") is not None:
         parts.append(f"AS{int(geo['asn'])} {sanitize(str(geo.get('as_org') or ''))}".rstrip(" -"))
+    return "  ".join(parts)
+
+
+def _reputation(enrichment: dict[str, Any] | None) -> str:
+    """One line from the stored AbuseIPDB reputation (all values sanitised)."""
+    rep = (enrichment or {}).get("reputation")
+    if not isinstance(rep, dict):
+        return "no reputation (provider off, address not public, or no answer at the time)"
+    last = str(rep.get("last_reported_at") or "")[:10] or "never"
+    flags = [
+        name
+        for key, name in (("is_tor", "Tor exit"), ("is_whitelisted", "whitelisted"))
+        if rep.get(key)
+    ]
+    details = [sanitize(str(rep[k])) for k in ("usage_type", "isp") if rep.get(k)]
+    reports, users = int(rep.get("total_reports", 0)), int(rep.get("distinct_reporters", 0))
+    parts = [
+        f"AbuseIPDB {int(rep.get('score', 0))}/100",
+        f"{reports} report(s) by {users} user(s), last {sanitize(last)}",
+        *details,
+        *flags,
+        f"checked {sanitize(str(rep.get('checked_at') or '?')[:16].replace('T', ' '))}Z",
+    ]
     return "  ".join(parts)
 
 

@@ -96,6 +96,10 @@ services:
       SENTINEL_ENRICHMENT_ENABLED: "true"
       SENTINEL_GEOIP_CITY_DB: /geoip/dbip-city-lite.mmdb
       SENTINEL_GEOIP_ASN_DB: /geoip/dbip-asn-lite.mmdb
+      # Optional reputation. Unlike GeoIP it SENDS public source addresses to abuseipdb.com.
+      # Empty (default) = off. Free plan: 1000 requests a day; the budget below stays under it.
+      SENTINEL_ABUSEIPDB_API_KEY: ${SENTINEL_ABUSEIPDB_API_KEY:-}
+      SENTINEL_ABUSEIPDB_DAILY_LIMIT: ${SENTINEL_ABUSEIPDB_DAILY_LIMIT:-900}
     volumes:
       - ./geoip:/geoip:ro
     depends_on:

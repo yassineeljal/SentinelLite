@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,6 +41,19 @@ class Settings(BaseSettings):
     enricher_batch_size: int = Field(default=100, gt=0)
     enricher_claim_idle_ms: int = Field(default=60_000, ge=0)
     alerts_stream_maxlen: int = Field(default=100_000, gt=0)
+    # AbuseIPDB reputation. Off without a key. UNLIKE GeoIP it sends the source address of an alert
+    # (public addresses only) to a third party. The key comes from the environment only, is never
+    # logged, and the free plan allows 1000 requests a day: the default budget stays below that.
+    abuseipdb_api_key: SecretStr | None = None
+    abuseipdb_daily_limit: int = Field(default=900, gt=0)
+    abuseipdb_max_age_days: int = Field(default=90, ge=1, le=365)
+    reputation_cache_ttl_seconds: int = Field(default=24 * 3600, gt=0)
+
+    @field_validator("abuseipdb_api_key", mode="before")
+    @classmethod
+    def _empty_key_means_off(cls, value: object) -> object:
+        # docker compose passes `${SENTINEL_ABUSEIPDB_API_KEY:-}` as an empty string when unset.
+        return None if isinstance(value, str) and not value.strip() else value
 
 
 @lru_cache
