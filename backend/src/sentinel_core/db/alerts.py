@@ -31,6 +31,7 @@ class AlertSummary:
     user_name: str | None
     match_count: int
     country_code: str | None  # from the enrichment, when there is one
+    abuse_score: int | None  # AbuseIPDB confidence 0-100, when a reputation was fetched
 
 
 @dataclass(frozen=True)
@@ -95,7 +96,8 @@ async def set_enrichment(session: AsyncSession, alert_id: str, enrichment: Enric
 
 _SUMMARY_COLUMNS = (
     "alert_id, rule_id, title, severity, ts, created_at, host(src_ip) AS src_ip, host, user_name,"
-    " match_count, enrichment->'geo'->>'country_code' AS country_code"
+    " match_count, enrichment->'geo'->>'country_code' AS country_code,"
+    " CAST(enrichment->'reputation'->>'score' AS integer) AS abuse_score"
 )
 
 
@@ -112,6 +114,7 @@ def _summary(row: Any) -> AlertSummary:
         user_name=row.user_name,
         match_count=row.match_count,
         country_code=row.country_code,
+        abuse_score=row.abuse_score,
     )
 
 

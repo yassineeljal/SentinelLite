@@ -171,9 +171,15 @@ Optional: adds country, city and network to alerts (see [`ENRICHMENT.md`](ENRICH
 in `deploy/.env`, then `docker compose up -d --build`. The `enricher` service exits at startup with
 the reason if a database is missing. Data by DB-IP.com (CC BY 4.0).
 
+Optional AbuseIPDB reputation: set `SENTINEL_ABUSEIPDB_API_KEY` in `deploy/.env` (free key). **This
+sends the public source address of alerts to abuseipdb.com**; leave it empty to keep every address
+local. Cache, daily budget and pauses are described in [`ENRICHMENT.md`](ENRICHMENT.md).
+
 ```bash
 docker compose logs -f enricher                              # "batch: n enriched, ..."
 docker compose exec redis redis-cli xlen alerts.new          # announcements waiting (normally 0)
+docker compose exec redis redis-cli get sl:rep:quota:$(date -u +%Y%m%d)   # AbuseIPDB requests made today
+docker compose exec redis redis-cli get sl:rep:blocked       # set = lookups paused (the value says why)
 docker compose exec api sentinel alerts show <id-prefix>     # the `from` line
 ```
 
@@ -192,5 +198,7 @@ docker compose exec api sentinel alerts show <id-prefix>     # the `from` line
 | `events.normalized` keeps growing | The detector is down or slower than the normalizer; the normalizer pauses at the watermark |
 | Events missing but the stream is empty | Look in `events_dead_letter` (malformed line or source without a normalizer), or the line was well-formed with nothing to model |
 | `enricher` exits at startup | Enrichment disabled (`SENTINEL_ENRICHMENT_ENABLED`), or a GeoIP database is missing / not a database / of the wrong kind: the log names the file. Run `deploy/fetch-geoip.sh` |
+| Alerts have a country but no `abuse` line | No key set, address not public, or lookups paused: `redis-cli get sl:rep:blocked` gives the reason, and `docker compose logs enricher` the moment it started ("reputation lookups paused") |
+| `reputation lookups paused: the key was refused` | The AbuseIPDB key is wrong, revoked or not activated; fix `SENTINEL_ABUSEIPDB_API_KEY` and `docker compose up -d enricher` |
 | Alerts show `not enriched` | The enricher is not running (`--profile enrichment`), was enabled after the alert, or the alert has no source address (sudo, account rules) |
 | `events_default` keeps growing | Events are dated outside yesterday..today+7: wrong agent clock, or replayed old logs |

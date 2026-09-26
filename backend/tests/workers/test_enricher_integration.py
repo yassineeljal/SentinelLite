@@ -21,6 +21,7 @@ from sentinel_core.detection.alerts import Alert
 from sentinel_core.detection.engine import DetectionEngine
 from sentinel_core.detection.rules import load_rules
 from sentinel_core.detection.store import RedisWindowStore
+from sentinel_core.enrichment.abuseipdb import Reputation
 from sentinel_core.enrichment.enricher import Enricher
 from sentinel_core.enrichment.geoip import GeoIpResolver
 from sentinel_core.workers.detector import DetectorWorker
@@ -168,7 +169,7 @@ async def test_a_private_source_is_marked_non_public_without_a_location(stack: S
     await stack.pump()
 
     (alert,) = await stack.rows("SELECT enrichment FROM alerts")
-    assert alert.enrichment == {"ip_scope": "non_public", "geo": None}
+    assert alert.enrichment == {"ip_scope": "non_public", "geo": None, "reputation": None}
 
 
 async def test_a_public_address_unknown_to_the_database_is_marked_public(stack: Stack) -> None:
@@ -177,7 +178,7 @@ async def test_a_public_address_unknown_to_the_database_is_marked_public(stack: 
     await stack.pump()
 
     (alert,) = await stack.rows("SELECT enrichment FROM alerts")
-    assert alert.enrichment == {"ip_scope": "public", "geo": None}
+    assert alert.enrichment == {"ip_scope": "public", "geo": None, "reputation": None}
 
 
 async def test_the_alert_is_stored_before_it_is_announced(stack: Stack) -> None:
@@ -354,10 +355,10 @@ async def test_an_alert_that_cannot_be_enriched_does_not_block_the_others(
 ) -> None:
     real = stack.enricher._enricher.enrich
 
-    def broken_for_one(src_ip: str | None) -> Any:
+    async def broken_for_one(src_ip: str | None) -> Any:
         if src_ip == UNKNOWN_IP:
             raise ValueError("corrupt record")
-        return real(src_ip)
+        return await real(src_ip)
 
     monkeypatch.setattr(stack.enricher._enricher, "enrich", broken_for_one)
     await stack.attack(UNKNOWN_IP, "1")
@@ -372,3 +373,61 @@ async def test_an_alert_that_cannot_be_enriched_does_not_block_the_others(
     assert rows[UNKNOWN_IP] is None  # left as it is
     assert rows[PARIS_IP]["geo"]["country_code"] == "FR"
     assert await stack.redis.xlen(stack.alerts_stream) == 0 and await stack.pending() == 0
+
+
+class FakeReputation:
+    def __init__(self) -> None:
+        self.asked: list[str] = []
+
+    async def lookup(self, ip: str) -> Reputation | None:
+        self.asked.append(ip)
+        return Reputation(score=91, total_reports=300, distinct_reporters=40, checked_at=NOW)
+
+
+async def test_the_reputation_is_stored_for_public_sources_and_never_asked_for_private_ones(
+    stack: Stack, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = FakeReputation()
+    monkeypatch.setattr(stack.enricher._enricher, "_reputation", fake)
+    await stack.attack(PARIS_IP, "1")
+    await stack.attack("192.168.139.50", "2")
+
+    await stack.pump()
+
+    rows = {
+        r.ip: r.enrichment
+        for r in await stack.rows("SELECT host(src_ip) AS ip, enrichment FROM alerts")
+    }
+    assert rows[PARIS_IP]["reputation"]["score"] == 91
+    assert rows[PARIS_IP]["reputation"]["source"] == "abuseipdb"
+    assert rows["192.168.139.50"]["reputation"] is None
+    assert fake.asked == [PARIS_IP]  # the private address never left
+
+
+async def test_a_redis_failure_while_enriching_leaves_the_announcements_pending(
+    stack: Stack, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await stack.attack(PARIS_IP)
+    while await stack.normalizer.run_once():
+        pass
+    while await stack.detector.run_once():
+        pass
+    real = stack.enricher._enricher.enrich
+    failures = 1
+
+    async def redis_blips(src_ip: str | None) -> Any:
+        nonlocal failures
+        if failures:
+            failures -= 1
+            raise RedisError("cache unreachable")  # e.g. the reputation cache
+        return await real(src_ip)
+
+    monkeypatch.setattr(stack.enricher._enricher, "enrich", redis_blips)
+
+    with pytest.raises(RedisError):
+        await stack.enricher.run_once()
+    assert await stack.pending() == 1  # nothing was acknowledged, nothing lost
+    await stack.pump()
+
+    (alert,) = await stack.rows("SELECT enrichment FROM alerts")
+    assert alert.enrichment["geo"]["country_code"] == "FR"

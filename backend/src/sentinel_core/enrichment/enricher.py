@@ -9,7 +9,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from sentinel_core.enrichment.abuseipdb import Reputation
 from sentinel_core.enrichment.geoip import GeoInfo, GeoIpResolver
+from sentinel_core.enrichment.reputation import ReputationLookup
 
 
 class Enrichment(BaseModel):
@@ -21,16 +23,26 @@ class Enrichment(BaseModel):
     # link-local, documentation or other reserved range: there is nothing to look up.
     ip_scope: Literal["public", "non_public"]
     geo: GeoInfo | None = None
+    # Only for public addresses, only when a provider is configured and answered.
+    reputation: Reputation | None = None
 
 
 class Enricher:
-    def __init__(self, geoip: GeoIpResolver) -> None:
+    def __init__(self, geoip: GeoIpResolver, reputation: ReputationLookup | None = None) -> None:
         self._geoip = geoip
+        self._reputation = reputation
 
-    def enrich(self, src_ip: str | None) -> Enrichment | None:
-        """None when the alert has no source address (nothing to say about it)."""
+    async def enrich(self, src_ip: str | None) -> Enrichment | None:
+        """None when the alert has no source address (nothing to say about it).
+
+        Only public addresses are looked up, and only they can ever leave the machine (to the
+        reputation provider): a private address is never sent anywhere."""
         if not src_ip:
             return None
         if not self._geoip.is_public(src_ip):
             return Enrichment(ip_scope="non_public")
-        return Enrichment(ip_scope="public", geo=self._geoip.lookup(src_ip))
+        return Enrichment(
+            ip_scope="public",
+            geo=self._geoip.lookup(src_ip),
+            reputation=await self._reputation.lookup(src_ip) if self._reputation else None,
+        )

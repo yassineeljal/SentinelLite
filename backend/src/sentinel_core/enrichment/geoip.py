@@ -10,7 +10,6 @@ a web page, so every value is type-checked, stripped of control characters and b
 """
 
 import ipaddress
-import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +17,7 @@ import maxminddb
 from maxminddb.reader import Reader
 from pydantic import BaseModel, ConfigDict
 
-MAX_TEXT = 100
+from sentinel_core.enrichment.text import clean_text
 
 
 class GeoIpError(Exception):
@@ -39,17 +38,10 @@ class GeoInfo(BaseModel):
     as_org: str | None = None
 
 
-def _text(value: Any) -> str | None:
-    if not isinstance(value, str):
-        return None
-    cleaned = "".join(c for c in value if unicodedata.category(c)[0] != "C").strip()
-    return cleaned[:MAX_TEXT] or None
-
-
 def _name(record: Any) -> str | None:
     """English name of a `{"names": {"en": ...}}` record."""
     names = record.get("names") if isinstance(record, dict) else None
-    return _text(names.get("en")) if isinstance(names, dict) else None
+    return clean_text(names.get("en")) if isinstance(names, dict) else None
 
 
 def _country_code(value: Any) -> str | None:
@@ -127,7 +119,7 @@ class GeoIpResolver:
         network = self._asn.get(ip) if self._asn else None
         if isinstance(network, dict):
             fields["asn"] = _asn(network.get("autonomous_system_number"))
-            fields["as_org"] = _text(network.get("autonomous_system_organization"))
+            fields["as_org"] = clean_text(network.get("autonomous_system_organization"))
         info = GeoInfo(**fields)
         return info if info.model_dump(exclude_none=True) else None
 
