@@ -96,6 +96,7 @@ async def _alerts(args: argparse.Namespace, sessions: async_sessionmaker[AsyncSe
                     f"{a.ts:%Y-%m-%d %H:%M:%S}  {a.severity:>3}  {sanitize(a.rule_id):<20} "
                     f"{sanitize(a.src_ip):<16} {sanitize(a.country_code):<3} "
                     f"{'-' if a.abuse_score is None else a.abuse_score:>3} "
+                    f"{'-' if a.risk_score is None else a.risk_score:>3} "
                     f"{sanitize(a.host):<14} {sanitize(a.user_name):<10} "
                     f"x{a.match_count:<3} {a.alert_id[:12]}"
                 )
@@ -123,6 +124,8 @@ async def _alerts(args: argparse.Namespace, sessions: async_sessionmaker[AsyncSe
         print(f"who     {group}  host={sanitize(a.host)}  user={sanitize(a.user_name)}")
         print(f"from    {_where(detail.enrichment)}")
         print(f"abuse   {_reputation(detail.enrichment)}")
+        for line in _risk(detail.risk):
+            print(line)
         print(f"count   {a.match_count} event(s), {len(detail.evidence)} shown")
         if detail.detection_latency is not None:
             ms = detail.detection_latency.total_seconds() * 1000
@@ -174,6 +177,19 @@ def _reputation(enrichment: dict[str, Any] | None) -> str:
         f"checked {sanitize(str(rep.get('checked_at') or '?')[:16].replace('T', ' '))}Z",
     ]
     return "  ".join(parts)
+
+
+def _risk(risk: dict[str, Any] | None) -> list[str]:
+    """The risk score and, one per line, the factors that make it (all values sanitised)."""
+    if not isinstance(risk, dict):
+        return ["risk    not scored yet (the enricher has not processed this alert)"]
+    lines = [f"risk    {int(risk.get('score', 0))}/100 ({sanitize(str(risk.get('level', '?')))})"]
+    for factor in risk.get("factors") or []:
+        if isinstance(factor, dict):
+            points = int(factor.get("points", 0))
+            name, reason = sanitize(str(factor.get("name"))), sanitize(str(factor.get("reason")))
+            lines.append(f"          {points:+d} {name}: {reason}")
+    return lines
 
 
 def main(argv: list[str] | None = None) -> int:
