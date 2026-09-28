@@ -11,6 +11,7 @@ from mmdb_writer import MMDBWriter
 from netaddr import IPSet
 
 PARIS_IP = "9.9.9.9"
+NEARBY_IP = "9.9.10.9"  # ~111 km from Paris: below a typical min-distance threshold
 TORONTO_IP = "8.8.4.4"
 ASN_ONLY_IP = "1.1.1.1"
 UNKNOWN_IP = "5.5.5.5"
@@ -44,6 +45,11 @@ def city_db(path: Path) -> Path:
                 "country": {"iso_code": "CA", "names": {"en": "Canada"}},
                 "city": {"names": {"en": "Toronto"}},
                 "location": {"latitude": 43.65, "longitude": -79.38},
+            },
+            "9.9.10.0/24": {
+                "country": {"iso_code": "FR", "names": {"en": "France"}},
+                "city": {"names": {"en": "Compiegne"}},
+                "location": {"latitude": 49.85, "longitude": 2.35},
             },
             # A record with only a country (common for the coarsest entries).
             "1.1.1.0/24": {"country": {"iso_code": "AU", "names": {"en": "Australia"}}},

@@ -5,14 +5,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from hashlib import sha256
+from math import asin, cos, radians, sin, sqrt
 from typing import Any
 
 from redis.exceptions import RedisError
 
 from sentinel_core.detection.alerts import Alert
-from sentinel_core.detection.rules import Rule, SequenceStep
+from sentinel_core.detection.rules import Rule, SequenceStep, StatefulSpec
 from sentinel_core.detection.schedule import Schedule
 from sentinel_core.detection.store import WindowStore
+from sentinel_core.enrichment.geoip import GeoIpResolver
 from sentinel_core.schema.event import Event
 
 # An agent controls the timestamps in its lines. The age of a window is measured from its NEWEST
@@ -121,16 +123,75 @@ def _group_digest(rule: Rule, event: Event, group: list[str]) -> str:
     return _digest(*group)
 
 
+_EARTH_RADIUS_KM = 6371.0
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance in km. Ignores altitude and the shape of real travel routes: a lower
+    bound on how far the traveller actually went, never an overestimate."""
+    p1, p2 = radians(lat1), radians(lat2)
+    d_phi, d_lambda = radians(lat2 - lat1), radians(lon2 - lon1)
+    a = sin(d_phi / 2) ** 2 + cos(p1) * cos(p2) * sin(d_lambda / 2) ** 2
+    return 2 * _EARTH_RADIUS_KM * asin(min(1.0, sqrt(a)))
+
+
+def _encode_location(event_id: str, ts_ms: int, lat: float, lon: float) -> str:
+    # event_id is hex-only and ts/lat/lon never contain '|': safe as a plain separator.
+    return f"{event_id}|{ts_ms}|{lat!r}|{lon!r}"
+
+
+@dataclass(frozen=True)
+class _Location:
+    event_id: str
+    ts_ms: int
+    lat: float
+    lon: float
+
+
+def _decode_location(encoded: str) -> "_Location | None":
+    parts = encoded.split("|")
+    if len(parts) != 4:
+        return None  # defensive: this store only ever holds what _encode_location wrote
+    event_id, ts_ms, lat, lon = parts
+    try:
+        return _Location(event_id, int(ts_ms), float(lat), float(lon))
+    except ValueError:
+        return None
+
+
+def _previous_location(evidence: list[str], own_event_id: str) -> "_Location | None":
+    """The most recent entry that is not `own_event_id` (a redelivered event may already be its
+    own newest entry: peek() runs before this event records itself, but on redelivery after a
+    crash the earlier attempt's write may already be there)."""
+    for encoded in evidence:
+        location = _decode_location(encoded)
+        if location is not None and location.event_id != own_event_id:
+            return location
+    return None
+
+
+class MissingGeoIp(ValueError):
+    """A loaded, enabled rule needs GeoIP lookups but none were configured."""
+
+
 class DetectionEngine:
     def __init__(
         self,
         rules: Sequence[Rule],
         store: WindowStore,
         on_rule_error: RuleErrorHandler | None = None,
+        geoip: GeoIpResolver | None = None,
     ) -> None:
         self._rules = [_CompiledRule(rule) for rule in rules if rule.enabled]
         self._store = store
         self._on_rule_error = on_rule_error
+        self._geoip = geoip
+        needing = [c.rule.id for c in self._rules if c.rule.type == "stateful"]
+        if needing and geoip is None:
+            raise MissingGeoIp(
+                f"rule(s) {', '.join(needing)} need GeoIP lookups (type: stateful) but no "
+                "GeoIP database was configured; see docs/DETECTION.md"
+            )
 
     async def evaluate(
         self, event: Event, on_rule_error: RuleErrorHandler | None = None
@@ -153,6 +214,8 @@ class DetectionEngine:
                     alert = await self._threshold(compiled, event, ts)
                 elif compiled.rule.type == "sequence":
                     alert = await self._sequence(compiled, event, ts)
+                elif compiled.rule.type == "stateful":
+                    alert = await self._stateful(compiled, event, ts)
                 else:
                     alert = await self._match(compiled, event, ts)
             except RedisError:
@@ -266,6 +329,68 @@ class DetectionEngine:
             await self._store.record_and_check(
                 key, event.event_id, ts_ms, window_ms=window_ms, count=1, cooldown_ms=0
             )
+        return alert
+
+    async def _stateful(self, compiled: _CompiledRule, event: Event, ts: datetime) -> Alert | None:
+        rule = compiled.rule
+        spec = rule.stateful
+        if spec is None:  # cannot happen: Rule validation requires it for stateful rules
+            raise RuntimeError(f"stateful rule {rule.id!r} has no stateful spec")
+        if spec.kind == "impossible_travel":
+            return await self._impossible_travel(compiled, spec, event, ts)
+        raise RuntimeError(f"unknown stateful kind {spec.kind!r}")  # unreachable: validated at load
+
+    async def _impossible_travel(
+        self, compiled: _CompiledRule, spec: StatefulSpec, event: Event, ts: datetime
+    ) -> Alert | None:
+        """Alerts when this login could not physically follow the group's previous one.
+
+        The location this event is remembered under is written AFTER the comparison (`peek` then
+        `record_and_check`, like a sequence's `first` step): an event never travels from itself.
+        `_previous_location` also skips any entry matching this event's own id, in case a crash
+        between that write and the alert being persisted caused the entry to already be there on
+        redelivery -- the same trigger must always compare against the same true previous point.
+        """
+        rule = compiled.rule
+        group = compiled.group_values(event)
+        if group is None or event.src_ip is None or self._geoip is None:
+            return None
+        geo = self._geoip.lookup(str(event.src_ip))
+        if geo is None or geo.latitude is None or geo.longitude is None:
+            return None  # non-public, or the database has no coordinates for it
+        digest = _group_digest(rule, event, group)
+        key = f"trv:{rule.id}:{digest}"
+        ts_ms = _to_ms(ts)
+        window_ms = spec.window_seconds * 1000
+
+        prior = await self._store.peek(key, ts_ms, window_ms=window_ms)
+        previous = _previous_location(prior.evidence, event.event_id)
+        alert: Alert | None = None
+        if previous is not None:
+            distance_km = _haversine_km(previous.lat, previous.lon, geo.latitude, geo.longitude)
+            if distance_km >= spec.min_distance_km:
+                hours = max((ts_ms - previous.ts_ms) / 3_600_000, 1 / 3600)  # floor: 1 second
+                if distance_km / hours > spec.max_speed_kmh and await self._store.acquire_cooldown(
+                    key, ts_ms, rule.cooldown_seconds * 1000, event.event_id
+                ):
+                    alert = self._alert(
+                        compiled,
+                        event,
+                        ts,
+                        group,
+                        _digest(rule.id, digest, event.event_id),
+                        [event.event_id, previous.event_id],
+                        2,
+                    )
+        await self._store.record_and_check(
+            key,
+            event.event_id,
+            ts_ms,
+            window_ms=window_ms,
+            count=1,
+            cooldown_ms=0,
+            evidence=_encode_location(event.event_id, ts_ms, geo.latitude, geo.longitude),
+        )
         return alert
 
     @staticmethod

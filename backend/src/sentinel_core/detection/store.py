@@ -16,7 +16,8 @@ Semantics shared by every implementation (checked by tests/detection/test_store_
     number of distinct values in the window. (For a late event this can undercount values seen
     LATER than it: the safe direction, fewer alerts.)
   * `peek` reads a window like `record_and_check` would, without writing to it (sequence rules
-    read the window of their first step when the second step arrives);
+    read the window of their first step when the second step arrives; impossible travel reads the
+    group's previous location, encoded as `evidence` by an earlier `record_and_check`);
   * the cooldown is also in event time: after an alert at time t, hits with ts < t + cooldown
     are suppressed (this includes late events with ts < t) ... except for the very event that
     raised that alert: delivery is at-least-once, so if a worker crashes after evaluating but
@@ -214,7 +215,11 @@ for _, id in ipairs(ids) do table.insert(result, id) end
 return result
 """
 
-# KEYS: window zset.  ARGV: ts, window, max evidence.  Returns {0, count, evidence...}; no write.
+# KEYS: window zset, evidence hash.  ARGV: ts, window, max evidence.
+# Returns {0, count, evidence...}; no write. Mirrors the threshold script's evidence lookup, so a
+# caller who wrote evidence via
+# record_and_check (e.g. impossible travel encoding a location) reads the SAME strings back here,
+# not the raw members; a member with no evidence falls back to itself, like InMemoryWindowStore.
 _PEEK_SCRIPT = """
 local ts = tonumber(ARGV[1])
 local window = tonumber(ARGV[2])
@@ -222,6 +227,12 @@ local low = string.format('%d', ts - window)
 local high = string.format('%d', ts)
 local n = redis.call('ZCOUNT', KEYS[1], low, high)
 local ids = redis.call('ZREVRANGEBYSCORE', KEYS[1], high, low, 'LIMIT', 0, tonumber(ARGV[3]))
+if #ids > 0 then
+  local mapped = redis.call('HMGET', KEYS[2], unpack(ids))
+  for i, value in ipairs(mapped) do
+    if value then ids[i] = value end
+  end
+end
 local result = {0, n}
 for _, id in ipairs(ids) do table.insert(result, id) end
 return result
@@ -304,7 +315,8 @@ class RedisWindowStore:
 
     async def peek(self, key: str, ts_ms: int, *, window_ms: int) -> ThresholdResult:
         raw = await self._peek(
-            keys=[f"{self._prefix}win:{key}"], args=[ts_ms, window_ms, MAX_EVIDENCE]
+            keys=[f"{self._prefix}win:{key}", f"{self._prefix}ev:{key}"],
+            args=[ts_ms, window_ms, MAX_EVIDENCE],
         )
         return ThresholdResult(
             hit=False, count=int(raw[1]), evidence=[_text(item) for item in raw[2:]]

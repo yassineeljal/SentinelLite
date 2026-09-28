@@ -37,7 +37,8 @@ pytestmark = [
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RULES = load_rules(REPO_ROOT / "rules")
-SCENARIOS = discover_scenarios(REPO_ROOT / "datasets", [rule.id for rule in RULES])
+# A disabled rule needs no scenario coverage: it can never fire (see bench.py).
+SCENARIOS = discover_scenarios(REPO_ROOT / "datasets", [rule.id for rule in RULES if rule.enabled])
 AGENT = UUID("11111111-1111-1111-1111-111111111111")
 NOW = datetime.now(UTC)
 

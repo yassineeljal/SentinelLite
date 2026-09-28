@@ -18,11 +18,12 @@ from tests.support import REDIS_URL
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RULES = load_rules(REPO_ROOT / "rules")
-SCENARIOS = discover_scenarios(REPO_ROOT / "datasets", [rule.id for rule in RULES])
+# A disabled rule needs no scenario coverage: it can never fire (see bench.py).
+SCENARIOS = discover_scenarios(REPO_ROOT / "datasets", [rule.id for rule in RULES if rule.enabled])
 
 
 def test_every_rule_has_attack_and_benign_scenarios() -> None:
-    assert {s.rule_id for s in SCENARIOS} - {SHARED} == {rule.id for rule in RULES}
+    assert {s.rule_id for s in SCENARIOS} - {SHARED} == {rule.id for rule in RULES if rule.enabled}
 
 
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: f"{s.rule_id}/{s.name}")

@@ -135,7 +135,11 @@ service containers.
 
 The `detector` service consumes `events.normalized`, applies the rules in `rules/` and writes the
 `alerts` table. Rules are read once at startup (mounted read-only): after editing them,
-`docker compose restart detector`. An invalid or empty rule set makes it exit with the reason.
+`docker compose restart detector`. An invalid or empty rule set makes it exit with the reason, and
+so does an *enabled* `type: stateful` rule (e.g. `ssh-impossible-travel`, shipped disabled) without
+a GeoIP database: run `deploy/fetch-geoip.sh` first (see [`ENRICHMENT.md`](ENRICHMENT.md) and
+[`DETECTION.md`](DETECTION.md)); the detector reads the same `SENTINEL_GEOIP_CITY_DB`/`ASN_DB` files
+as the enricher, independently of whether enrichment itself is on.
 
 ```bash
 docker compose logs -f detector                                  # "ALERT <rule> ..." per detection

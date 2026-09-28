@@ -73,8 +73,13 @@ services:
       SENTINEL_RULES_DIR: /app/rules
       # When true, new alerts are announced on `alerts.new` for the enricher (profile below).
       SENTINEL_ENRICHMENT_ENABLED: ${SENTINEL_ENRICHMENT_ENABLED:-false}
+      # Only read if an ENABLED rule needs GeoIP (`type: stateful`, e.g. ssh-impossible-travel,
+      # shipped disabled): most deployments never touch this. Same files as the enricher's.
+      SENTINEL_GEOIP_CITY_DB: /geoip/dbip-city-lite.mmdb
+      SENTINEL_GEOIP_ASN_DB: /geoip/dbip-asn-lite.mmdb
     volumes:
       - ../rules:/app/rules:ro
+      - ./geoip:/geoip:ro
     depends_on:
       migrate:
         condition: service_completed_successfully

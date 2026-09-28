@@ -53,7 +53,9 @@ class Throughput:
 
 
 async def run_benchmark(rules: Sequence[Rule], datasets_dir: Path) -> BenchmarkRun:
-    scenarios = discover_scenarios(datasets_dir, [rule.id for rule in rules])
+    # A disabled rule cannot fire (the engine filters it out), so it needs no scenario coverage:
+    # requiring one would be an unsatisfiable check (0 alerts can never reach '# expect: N>=1').
+    scenarios = discover_scenarios(datasets_dir, [rule.id for rule in rules if rule.enabled])
     return BenchmarkRun(list(rules), [await run_scenario(s, rules) for s in scenarios])
 
 
@@ -168,7 +170,7 @@ async def measure_throughput(
     """
     scenarios = [
         s
-        for s in discover_scenarios(datasets_dir, [rule.id for rule in rules])
+        for s in discover_scenarios(datasets_dir, [rule.id for rule in rules if rule.enabled])
         if s.kind == "benign"
     ]
     events = 0
