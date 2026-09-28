@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     abuseipdb_max_age_days: int = Field(default=90, ge=1, le=365)
     reputation_cache_ttl_seconds: int = Field(default=24 * 3600, gt=0)
 
+    # Dashboard sessions. Cookies are HttpOnly and SameSite=Strict always; `Secure` (HTTPS only)
+    # is on by default and MUST be turned off for a plain-HTTP lab (deploy/.env), never for a
+    # deployment reachable over the network: see docs/OPERATIONS.md.
+    session_ttl_hours: int = Field(default=8, gt=0)
+    session_cookie_secure: bool = True
+
     @field_validator("abuseipdb_api_key", mode="before")
     @classmethod
     def _empty_key_means_off(cls, value: object) -> object:

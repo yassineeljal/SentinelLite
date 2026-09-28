@@ -13,6 +13,38 @@ Entry template:
 
 ---
 
+## 2026-09-29 — M4 (step 1) — Dashboard authentication: accounts, sessions, first protected endpoint (PR #22)
+
+**Housekeeping** — PR #21 (impossible travel) was merged into `main` on request; its CI is green.
+
+**What**
+- **Dashboard accounts** (`auth/passwords.py`, `auth/user_registry.py`): Argon2id-hashed passwords (`argon2-cffi`, library defaults), roles `admin`/`analyst`, no self-registration — `sentinel users create|list|revoke` (CLI, prompts for the password, never echoed) is the only way in. Revoking a user deletes every one of their sessions too.
+- **Sessions, not JWT**: a random 256-bit token, only its SHA-256 hash stored (`user_sessions`, same pattern as an agent's API key), carried in an `HttpOnly`, `SameSite=Strict` cookie. `POST /v1/auth/login`, `POST /v1/auth/logout`, `GET /v1/auth/me`. A wrong password and an unknown email give the exact same generic 401 (a dummy hash is verified either way, mirroring `ingest.py`'s agent-key pattern).
+- **`Secure` cookie flag**, configurable, **on by default**: `SENTINEL_SESSION_COOKIE_SECURE` (off only for a plain-HTTP lab), `SENTINEL_SESSION_TTL_HOURS` (default 8h). Both wired into the `api` compose service.
+- **First protected endpoint**: `GET /v1/alerts` (list only), behind a router-level auth dependency — proves the wiring end to end and gives the future frontend something to render. `sentinel alerts show` remains the way to see evidence.
+- Migration 0006 (`users`, `user_sessions`). Docs: new `docs/DASHBOARD.md`, `OPERATIONS.md`, ADR 34, `.env.example`.
+
+**Design notes**
+- **Cookies over JWT** (a deliberate change from the original plan in ARCHITECTURE.md §10): the dashboard is same-origin, so an `HttpOnly` cookie the browser attaches automatically beats a token the frontend would store and could leak to injected script (XSS). `SameSite=Strict` is the CSRF defence; a separate CSRF token would duplicate it for no real gain here.
+- **Email is a login identifier, not a deliverable address.** Pydantic's `EmailStr` (via `email-validator`) rejects reserved/internal TLDs (`.local`, `.test`, `.internal`) as "special-use" — exactly what a self-hosted lab uses. Replaced with a shape-only check shared between the API and the repository (one `@`, a dot after it, no whitespace); `email-validator`/`dnspython` removed again. Found by trying to create a real account on the real stack with `admin@sentinellite.local` and getting a 422.
+- **Argon2 needs a bounded input**: hashing cost scales with the password's length, so an unbounded password would make every attempt (including a client's own repeated ones) artificially expensive; both the minimum (12) and maximum (1024) are enforced before hashing.
+
+**How verified**
+- `ruff`, `mypy --strict` clean; **856 tests pass** with real Redis and Postgres (556 pass, 300 skipped without services). Password hashing (11 tests: hashing, verification, garbage input never raises, length bounds), the Postgres user/session repository (18 tests: authenticate, revoke cascades to sessions, session expiry, a session outliving its user's revocation is still refused, email case-folding, only the hash is stored on disk for both the password and the session token), the HTTP layer (14 tests: cookie flags including `Secure`, generic 401, `.local` domain accepted, malformed bodies rejected), and the CLI (6 tests, using `asyncio.to_thread` to call the sync CLI from an async test — same pattern already used for `alerts show`).
+- **Ten mutation checks, all caught** (password verification always true, wrong-password check removed, revoked users still authenticating, email case not normalised, expired sessions still resolving, `resolve_session`'s own revoked-user check removed, session token stored in the clear, `HttpOnly`/`SameSite=Strict` dropped, the alerts route left unprotected). Two survived their first run and were fixed properly rather than tests bent around them: revoking a user deletes its sessions, which masked `resolve_session`'s *own* revocation check — a dedicated test now revokes a user directly in SQL, bypassing the cascade, to prove the check stands on its own; a shell-escaping mistake, not a real gap, explained the other.
+- **Real stack**: created a real admin account (`docker compose exec api sentinel users create`), logged in over the real API, listed real alerts (including the `ssh-impossible-travel` one from the previous step, still enriched and scored), hit `/v1/auth/me`, `/v1/alerts` without a cookie (401), a wrong password (401, identical message), logged out, confirmed the session was dead, revoked the account, confirmed login then failed too.
+
+**Problems & lessons**
+- **I committed this entire step directly to `main`** before realising there was no feature branch. Caught at push time (no divergence between branches). Fixed by branching at that commit and hard-resetting `main` back to `origin/main` — nothing had been pushed, so no history was rewritten anywhere shared. Lesson, stated plainly: branch *first*, every time, no exceptions for "this is just the start of a step."
+- **The `Secure` cookie flag did exactly what it should, and I initially read that as a bug.** My first end-to-end test, against the real stack with the (correct) default `Secure=true`, failed every authenticated request after a successful login — because the test client, like a real browser, refuses to resend a `Secure` cookie over the lab's plain `http://`. The real gap it exposed was genuine: `deploy/docker-compose.yml` never forwarded `SENTINEL_SESSION_COOKIE_SECURE`/`SENTINEL_SESSION_TTL_HOURS` to the `api` service at all, so setting either in `deploy/.env` silently did nothing. Fixed and reverified.
+- New tests didn't truncate the new `users`/`user_sessions` tables between runs (the shared `engine` fixture's `TRUNCATE` list predates migration 0006), so reruns collided on duplicate emails until both the fixture and the affected tests were fixed to actually request it.
+
+**Not done / limits**: no 2FA yet, no account lockout after repeated failed logins (Argon2's cost is the only friction), RBAC only distinguishes "admin manages users" so far — the rest arrives with the routes it gates, no frontend yet.
+
+**Next**: the React + Vite + TS frontend (login page, alert list) consuming this API, then the rest of the dashboard (map, MITRE chart, incidents) and 2FA.
+
+---
+
 ## 2026-09-28 — M3 (step 4) — Impossible travel: `stateful` rules and GeoIP-backed correlation (PR #21)
 
 **Housekeeping** — PR #20 (risk score) was merged into `main` on request; its CI is green.

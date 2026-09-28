@@ -6,6 +6,7 @@ from sqlalchemy import (
     BigInteger,
     CheckConstraint,
     DateTime,
+    ForeignKey,
     Identity,
     Index,
     Integer,
@@ -46,6 +47,35 @@ class Agent(Base):
     key_hash: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
+class User(Base):
+    """A dashboard user. Only the Argon2 hash of the password is stored; there is no
+    self-registration, so this is always created through `sentinel users create` (see the CLI)."""
+
+    __tablename__ = "users"
+    __table_args__ = (CheckConstraint("role IN ('admin', 'analyst')", name="role"),)
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True)
+    password_hash: Mapped[str] = mapped_column(String(256))
+    role: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
+class UserSession(Base):
+    """A logged-in session. The primary key is the SHA-256 hash of the session token: only the
+    hash is stored, like an agent's key (auth/agent_keys.py). Deleted, not just marked, on logout
+    and once expired, so the table never grows with dead sessions."""
+
+    __tablename__ = "user_sessions"
+    __table_args__ = (Index("ix_user_sessions_user_id", "user_id"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class EventRecord(Base):

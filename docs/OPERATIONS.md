@@ -131,6 +131,22 @@ The Postgres tests truncate `agents`, `events` and `events_dead_letter` in the t
 `SENTINEL_TEST_DATABASE_URL` at a database that holds real data. CI runs the same tests with
 service containers.
 
+## Dashboard accounts
+
+See [`DASHBOARD.md`](DASHBOARD.md) for the design. There is no self-registration: create the first
+account after the stack is up.
+
+```bash
+docker compose exec api sentinel users create --email you@example.com --role admin
+docker compose exec api sentinel users list                              # never shows password hashes
+docker compose exec api sentinel users revoke <user-id>                  # also ends every session
+```
+
+`SENTINEL_SESSION_COOKIE_SECURE` defaults to `true` (the cookie is only ever sent over HTTPS). This
+lab's compose stack talks plain HTTP: `deploy/.env` sets it to `false` for that reason. **Set it
+back to `true` (or remove the line) for any deployment reachable over a real network** — a
+`Secure` cookie leaking on the wire is far cheaper to prevent than to explain afterward.
+
 ## Detector worker and alerts
 
 The `detector` service consumes `events.normalized`, applies the rules in `rules/` and writes the
@@ -201,6 +217,7 @@ docker compose exec api sentinel alerts show <id-prefix>     # `from`, `abuse` a
 | `detector` exits at startup | Invalid or empty rule set: the log lists every faulty file. Fix `rules/` and restart |
 | `events.normalized` keeps growing | The detector is down or slower than the normalizer; the normalizer pauses at the watermark |
 | Events missing but the stream is empty | Look in `events_dead_letter` (malformed line or source without a normalizer), or the line was well-formed with nothing to model |
+| Dashboard login works but `/v1/auth/me` (or the frontend) always answers 401 | `SENTINEL_SESSION_COOKIE_SECURE` is `true` (the default) while the browser talks plain HTTP: the cookie is never sent back, by design. Set it to `false` in `deploy/.env` for a plain-HTTP lab only |
 | `enricher` exits at startup | Enrichment disabled (`SENTINEL_ENRICHMENT_ENABLED`), or a GeoIP database is missing / not a database / of the wrong kind: the log names the file. Run `deploy/fetch-geoip.sh` |
 | Alerts have a country but no `abuse` line | No key set, address not public, or lookups paused: `redis-cli get sl:rep:blocked` gives the reason, and `docker compose logs enricher` the moment it started ("reputation lookups paused") |
 | `reputation lookups paused: the key was refused` | The AbuseIPDB key is wrong, revoked or not activated; fix `SENTINEL_ABUSEIPDB_API_KEY` and `docker compose up -d enricher` |

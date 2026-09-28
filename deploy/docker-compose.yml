@@ -120,6 +120,10 @@ services:
       <<: *database-url
       SENTINEL_REDIS_URL: redis://redis:6379/0
       SENTINEL_RESPONDER_MODE: ${SENTINEL_RESPONDER_MODE:-dry_run}
+      # Dashboard sessions. Secure=true by default (cookie only sent over HTTPS); set to false
+      # only for a plain-HTTP lab (see docs/OPERATIONS.md), never for a network-reachable deployment.
+      SENTINEL_SESSION_COOKIE_SECURE: ${SENTINEL_SESSION_COOKIE_SECURE:-true}
+      SENTINEL_SESSION_TTL_HOURS: ${SENTINEL_SESSION_TTL_HOURS:-8}
     ports:
       - "${SENTINEL_BIND_ADDR:-127.0.0.1}:8000:8000"
     depends_on:
