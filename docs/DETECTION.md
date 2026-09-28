@@ -14,7 +14,7 @@ description: >                # free text, shown to analysts
   Five or more failed SSH logins from the same source IP within 60 seconds.
 mitre: [T1110]                # at least one technique, e.g. T1110 or T1059.001
 severity: 60                  # 0-100
-type: threshold               # match | threshold | sequence
+type: threshold               # match | threshold | sequence | stateful
 match:                        # ALL conditions must hold (AND)
   source: linux.auth
   action: login_failed        # a list means any-of: action: [login_failed, invalid_user]
@@ -51,7 +51,7 @@ enabled: true                 # optional
 | `match` | implemented | one event satisfies the conditions (and the group's cooldown allows it) |
 | `threshold` | implemented | `count` matching events of the same group fall within `window` |
 | `sequence` | implemented | a `then` event arrives within `window` after `first` (at least `first.count` events) for the same group |
-| `stateful` | planned (M3) | needs history/enrichment: impossible travel (last known location per user) |
+| `stateful` | implemented | an event is compared against state built from the group's earlier events (today: `impossible_travel`, using GeoIP) |
 
 **`threshold` with `distinct`.** `threshold: {count: 6, window: 60s, distinct: user_name}` counts the
 different values of a field instead of the events: ten attempts on one name count once. Used for user
@@ -99,6 +99,33 @@ itself (a step may match both shapes). The alert's evidence is the `then` event 
 `first` events; the cooldown (default: the window) is per group. Order matters: successes before the
 failures do not count, and neither do failures older than `window`. Both steps use the same
 group values, so `group_by: [user_name, host]` ties an account creation and its group change together.
+
+**`stateful` (impossible travel).** Compares a login to the previous one for the same group, using
+GeoIP:
+
+```yaml
+type: stateful
+match: {source: linux.auth, action: login_success}
+group_by: [user_name]
+scope: global                  # correlates a user across every agent: see the caveat below
+stateful:
+  kind: impossible_travel      # the only kind today; kept as a field for future ones
+  window: 30d                  # a login further back than this is not remembered/compared
+  max_speed_kmh: 900            # above this, the trip could not have happened
+  min_distance_km: 300          # below this, treat it as the same place (GeoIP is not that precise)
+```
+
+The engine looks up each matching event's source address (public addresses only; non-public and
+addresses the database does not know are skipped), and compares it to the group's most recent
+*prior* public login within `window`: if the great-circle distance is at least `min_distance_km`
+and the implied speed exceeds `max_speed_kmh`, it alerts. State is one location per group, kept in
+the SAME window store as `threshold`/`sequence` (`peek` before `record_and_check`, so an event never
+travels from itself; a defensive self-check also protects a crash between recording the new location
+and the alert reaching Postgres -- the same trigger always compares against the same true previous
+point). **A `stateful` rule needs a GeoIP database at the DETECTOR**, not only the enricher
+(`SENTINEL_GEOIP_CITY_DB` / `SENTINEL_GEOIP_ASN_DB`, same files as [`ENRICHMENT.md`](ENRICHMENT.md)):
+the detector refuses to start if an *enabled* stateful rule has none configured. A disabled one
+needs nothing (and needs no scenario coverage either, since a disabled rule can never fire).
 
 Fields and values available per source: see [`EVENTS.md`](EVENTS.md).
 
@@ -171,6 +198,7 @@ engine rather than plain `re`.
 | `ssh-success-after-failures` | T1110, T1078 | sequence | a successful login from a source that failed ≥ 5 times in the previous 10 min: the guessing worked. Per source address (also covers spraying), severity 85, one alert per source per 10 min |
 | `ssh-off-hours-login` | T1078 | match + `when` | a successful login between 22:00 and 06:00 or on a Saturday or Sunday, **America/Toronto time** (edit `when` for your site). A lead, not an attack: severity 35, one alert per account and host per hour. Blind spot: a login during working hours is not seen by this rule |
 | `ssh-user-enumeration` | T1110.003, T1087.001 | threshold (distinct) | ≥ 6 **distinct** user names tried from one source in 60 s (`Invalid user` and `Failed password for invalid user` of one attempt count once). One name tried many times is `ssh-bruteforce`, not this |
+| `ssh-impossible-travel` | T1078 | stateful | a login too far, too soon after the same user's previous one (GeoIP, >= 300 km, > 900 km/h). **Shipped `enabled: false`**: needs a GeoIP database at the detector, which most deployments do not have; turn it on once `deploy/fetch-geoip.sh` has run and the detector has the two `SENTINEL_GEOIP_*` variables set. Blind spots: private/lab addresses cannot be located at all (GeoIP limits, see ENRICHMENT.md); a login within 30 days of the previous one is required to compare (a dormant account's first login after a gap is never flagged) |
 | `linux-new-admin-account` | T1136.001, T1098.007 | sequence | an account is created and, within 15 min, added to `sudo`/`admin`/`wheel`/`root` on the same host: a backdoor administrator. The two single-step rules also fire; this one is the correlation. Other privileged groups (`docker`, `shadow`…) are not part of it: **blind spot** |
 
 ## Adding a rule
@@ -261,9 +289,10 @@ data on a running stack, either use groups (e.g. IPs) not seen live, or clear th
 
 ## Limits
 
-- Eleven rules, one source (`linux.auth`); no `stateful` rules (impossible travel), no regex conditions.
+- Twelve rules, one source (`linux.auth`); no regex conditions.
 - `when` reads the event's own timestamp: an attacker with root on the monitored host can forge the time written in a log line (a date in the future is replaced by the receipt time, a date in the past is not). It is a triage signal, not a boundary.
 - `sequence` has two steps only (no chains of three), and its `first` step counts events, not distinct values.
+- `stateful` has one kind (`impossible_travel`) and remembers one location per group, not a history; it inherits every GeoIP limit from `ENRICHMENT.md` (approximate, anycast/VPN addresses misplaced, private addresses invisible).
 - `ssh-success-after-failures` counts failures per source address: an attacker who stays under five failures per ten minutes, or who rotates addresses, is not caught by it.
 - No hot reload of rules; no per-rule metrics yet.
 - Alerts have no status, assignee or enrichment yet (incidents and enrichment are M3/M4).

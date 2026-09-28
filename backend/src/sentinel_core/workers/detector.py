@@ -29,9 +29,10 @@ from sentinel_core.db.alerts import insert_alerts
 from sentinel_core.db.events import insert_dead_letters
 from sentinel_core.db.session import create_engine, create_sessionmaker
 from sentinel_core.detection.alerts import Alert
-from sentinel_core.detection.engine import DetectionEngine, RuleErrorHandler
+from sentinel_core.detection.engine import DetectionEngine, MissingGeoIp, RuleErrorHandler
 from sentinel_core.detection.rules import Rule, RuleLoadError, load_rules
 from sentinel_core.detection.store import RedisWindowStore
+from sentinel_core.enrichment.geoip import GeoIpError, GeoIpResolver
 from sentinel_core.normalizers.dead_letter import DeadLetterRecord, make_dead_letter
 from sentinel_core.schema.event import Event
 from sentinel_core.workers.consumer import (
@@ -200,12 +201,29 @@ async def amain() -> int:
         return 1
     logger.info("loaded %d rule(s): %s", len(rules), ", ".join(rule.id for rule in rules))
 
+    # Only a `type: stateful` rule needs GeoIP, and only if it is enabled: most deployments load
+    # none, so this stays optional and the geoip files are the same ones enrichment uses.
+    geoip: GeoIpResolver | None = None
+    if any(rule.enabled and rule.type == "stateful" for rule in rules):
+        try:
+            geoip = GeoIpResolver(settings.geoip_city_db, settings.geoip_asn_db)
+        except GeoIpError as exc:
+            logger.error("cannot start: a stateful rule is enabled but %s", exc)
+            return 1
+
     redis = build_redis(settings.redis_url)
     engine = create_engine(settings)
+    try:
+        detection_engine = DetectionEngine(rules, RedisWindowStore(redis), geoip=geoip)
+    except (
+        MissingGeoIp
+    ) as exc:  # cannot happen given the check above; kept as a second line of defence
+        logger.error("cannot start: %s", exc)
+        return 1
     worker = DetectorWorker(
         redis,
         create_sessionmaker(engine),
-        DetectionEngine(rules, RedisWindowStore(redis)),
+        detection_engine,
         alert_publisher=(
             RedisAlertPublisher(redis, maxlen=settings.alerts_stream_maxlen)
             if settings.enrichment_enabled
@@ -220,6 +238,8 @@ async def amain() -> int:
     try:
         await worker.run(stop)
     finally:
+        if geoip is not None:
+            geoip.close()
         await redis.aclose()
         await engine.dispose()
     return 0

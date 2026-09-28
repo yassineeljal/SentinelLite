@@ -1,0 +1,33 @@
+id: ssh-impossible-travel
+title: Impossible travel between two SSH logins
+description: >
+  The same account logged in successfully from two places that are far apart and too close
+  together in time to be the same physically-travelling person: a stolen or shared credential
+  used from two locations. Compares each login to the previous one for the same account (across
+  every monitored host: scope global, see the note below), using GeoIP. Distances under
+  min_distance_km are ignored (GeoIP is not precise enough to place someone within a city), and
+  a login further back than `window` is not compared (memory of "the previous place" resets).
+mitre: [T1078]
+severity: 70
+type: stateful
+match:
+  source: linux.auth
+  action: login_success
+group_by: [user_name]
+# global: correlates a user's logins across every agent, which is the point (one host cannot see
+# the other login). Costs the same caveat as any global-scope rule (DETECTION.md, "Agent isolation"):
+# a compromised agent can forge a fake "previous place" for a user it observes, and a forged event
+# still needs to clear the 5 s timestamp skew to matter. Used deliberately, for this reason alone.
+scope: global
+stateful:
+  kind: impossible_travel
+  window: 30d
+  max_speed_kmh: 900          # a fast commercial flight; anything above it cannot be a real trip
+  min_distance_km: 300        # ignore closer moves: ordinary GeoIP imprecision, not travel
+cooldown: 6h
+# Disabled by default: it needs a GeoIP database (deploy/fetch-geoip.sh) available to the DETECTOR
+# (not only the enricher), which existing deployments do not have mounted. Requires public source
+# addresses to say anything (private lab traffic cannot be located: see docs/ENRICHMENT.md limits).
+# Turn on with `enabled: true` once the detector has SENTINEL_GEOIP_CITY_DB/ASN_DB configured
+# (docs/DETECTION.md, "Impossible travel").
+enabled: false

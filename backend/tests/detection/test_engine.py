@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -6,10 +7,12 @@ import pytest
 from redis.exceptions import RedisError
 
 from sentinel_core.detection.alerts import Alert
-from sentinel_core.detection.engine import MAX_FUTURE_SKEW, DetectionEngine
+from sentinel_core.detection.engine import MAX_FUTURE_SKEW, DetectionEngine, MissingGeoIp
 from sentinel_core.detection.rules import Rule
 from sentinel_core.detection.store import LATE_TOLERANCE_MS, InMemoryWindowStore
+from sentinel_core.enrichment.geoip import GeoIpResolver
 from sentinel_core.schema.event import Action, Category, Event, Outcome, Source
+from tests.enrichment.geodb import NEARBY_IP, PARIS_IP, TORONTO_IP, UNKNOWN_IP, city_db
 
 AGENT = UUID("11111111-1111-1111-1111-111111111111")
 AGENT_B = UUID("22222222-2222-2222-2222-222222222222")
@@ -737,3 +740,201 @@ async def test_a_sequence_step_can_have_its_own_schedule() -> None:
     at_night = await run_events(engine(rule()), [*fails, success(100, at=9 * HOUR)])
 
     assert by_day == [] and len(at_night) == 1
+
+
+# --- stateful rules: impossible travel -----------------------------------------------------------
+
+PARIS_LOGIN = {"src_ip": PARIS_IP}
+NEARBY_LOGIN = {"src_ip": NEARBY_IP}  # ~111 km from Paris
+TORONTO_LOGIN = {"src_ip": TORONTO_IP}  # ~6000 km from Paris
+HOUR = 3600  # (also defined above for schedules; repeated here for readability of this section)
+
+
+@pytest.fixture
+def geoip(tmp_path: Path) -> GeoIpResolver:
+    return GeoIpResolver(city_db(tmp_path / "city.mmdb"), None)
+
+
+def travel_rule(**changes: Any) -> Rule:
+    data: dict[str, Any] = {
+        "id": "ssh-impossible-travel",
+        "title": "Impossible travel",
+        "mitre": ["T1078"],
+        "severity": 70,
+        "type": "stateful",
+        "match": {"action": "login_success"},
+        "group_by": ["user_name"],
+        "scope": "global",
+        "stateful": {
+            "kind": "impossible_travel",
+            "window": "30d",
+            "max_speed_kmh": 900,
+            "min_distance_km": 300,
+        },
+    }
+    return Rule.model_validate(data | changes)
+
+
+def login(n: int, at: float, geo: dict[str, Any], agent: UUID = AGENT) -> Event:
+    return make_event(n, action=Action.LOGIN_SUCCESS, at=at, agent=agent, **geo)
+
+
+def travel_engine(rule: Rule, geoip: GeoIpResolver | None, store: Any = None) -> DetectionEngine:
+    return DetectionEngine([rule], store or InMemoryWindowStore(), geoip=geoip)
+
+
+async def test_a_first_login_has_nothing_to_compare_against(geoip: GeoIpResolver) -> None:
+    eng = travel_engine(travel_rule(), geoip)
+
+    assert await eng.evaluate(login(1, 0, PARIS_LOGIN)) == []
+
+
+async def test_travel_faster_than_the_speed_limit_alerts(geoip: GeoIpResolver) -> None:
+    eng = travel_engine(travel_rule(), geoip)
+    await eng.evaluate(login(1, 0, PARIS_LOGIN))
+
+    alerts = await eng.evaluate(login(2, HOUR, TORONTO_LOGIN))  # ~6000 km in 1 h
+
+    assert len(alerts) == 1
+    alert = alerts[0]
+    assert (alert.rule_id, alert.severity, alert.mitre) == (
+        "ssh-impossible-travel",
+        70,
+        ["T1078"],
+    )
+    assert alert.group == {"user_name": "root"}
+    assert alert.event_ids == [
+        login(2, HOUR, TORONTO_LOGIN).event_id,
+        login(1, 0, PARIS_LOGIN).event_id,
+    ]
+    assert alert.match_count == 2
+
+
+async def test_travel_slow_enough_to_be_a_real_trip_does_not_alert(geoip: GeoIpResolver) -> None:
+    eng = travel_engine(travel_rule(), geoip)
+    await eng.evaluate(login(1, 0, PARIS_LOGIN))
+
+    alerts = await eng.evaluate(login(2, 10 * HOUR, TORONTO_LOGIN))  # ~6000 km in 10 h: a flight
+
+    assert alerts == []
+
+
+async def test_a_short_distance_never_alerts_even_instantly(geoip: GeoIpResolver) -> None:
+    eng = travel_engine(travel_rule(), geoip)
+    await eng.evaluate(login(1, 0, PARIS_LOGIN))
+
+    alerts = await eng.evaluate(login(2, 1, NEARBY_LOGIN))  # ~111 km in 1 second
+
+    assert alerts == []  # below min_distance_km: GeoIP noise, not travel
+
+
+async def test_a_login_older_than_the_window_is_not_remembered(geoip: GeoIpResolver) -> None:
+    eng = travel_engine(
+        travel_rule(
+            stateful={
+                "kind": "impossible_travel",
+                "window": "1h",
+                "max_speed_kmh": 900,
+                "min_distance_km": 300,
+            }
+        ),
+        geoip,
+    )
+    await eng.evaluate(login(1, 0, PARIS_LOGIN))
+
+    alerts = await eng.evaluate(login(2, 2 * HOUR, TORONTO_LOGIN))  # more than 1h later
+
+    assert alerts == []
+
+
+async def test_non_public_addresses_are_never_compared_or_looked_up(geoip: GeoIpResolver) -> None:
+    eng = travel_engine(travel_rule(), geoip)
+    await eng.evaluate(login(1, 0, PARIS_LOGIN))
+
+    silent = await eng.evaluate(login(2, HOUR, {"src_ip": "203.0.113.7"}))  # documentation range
+    # The private login left no trace: a later, genuinely fast trip from Paris still alerts.
+    alerts = await eng.evaluate(login(3, 2 * HOUR, TORONTO_LOGIN))
+
+    assert silent == [] and len(alerts) == 1
+    assert (
+        alerts[0].event_ids[1] == login(1, 0, PARIS_LOGIN).event_id
+    )  # compared to Paris, not the private login
+
+
+async def test_a_public_address_unknown_to_the_database_is_skipped(geoip: GeoIpResolver) -> None:
+    eng = travel_engine(travel_rule(), geoip)
+    await eng.evaluate(login(1, 0, PARIS_LOGIN))
+
+    assert await eng.evaluate(login(2, HOUR, {"src_ip": UNKNOWN_IP})) == []
+
+
+async def test_an_event_lacking_the_group_field_is_skipped(geoip: GeoIpResolver) -> None:
+    eng = travel_engine(travel_rule(), geoip)
+    await eng.evaluate(login(1, 0, PARIS_LOGIN))
+
+    assert await eng.evaluate(login(2, HOUR, {**TORONTO_LOGIN, "user": None})) == []
+
+
+async def test_the_cooldown_suppresses_repeat_alerts_and_the_trigger_may_re_raise(
+    geoip: GeoIpResolver,
+) -> None:
+    eng = travel_engine(travel_rule(cooldown="1d"), geoip)
+    await eng.evaluate(login(1, 0, PARIS_LOGIN))
+    first = await eng.evaluate(login(2, HOUR, TORONTO_LOGIN))
+
+    again = await eng.evaluate(
+        login(3, 2 * HOUR, PARIS_LOGIN)
+    )  # travels right back: also "impossible"
+    redelivered = await eng.evaluate(login(2, HOUR, TORONTO_LOGIN))  # the trigger, redelivered
+
+    assert len(first) == 1 and again == []  # within the cooldown
+    assert [a.alert_id for a in redelivered] == [a.alert_id for a in first]
+
+
+async def test_a_crash_between_advancing_state_and_persisting_does_not_lose_the_alert(
+    geoip: GeoIpResolver,
+) -> None:
+    """If the state write for this event's own location succeeds but the process then crashes
+    before the alert reaches Postgres, redelivery must recompute the SAME alert, not compare the
+    event to itself."""
+    store = InMemoryWindowStore()
+    eng = travel_engine(travel_rule(), geoip, store)
+    await eng.evaluate(login(1, 0, PARIS_LOGIN))
+    trigger = login(2, HOUR, TORONTO_LOGIN)
+
+    first = await eng.evaluate(
+        trigger
+    )  # this call also advances the state to `trigger`'s own location
+    redelivered = await eng.evaluate(trigger)  # simulates a crash right after, before persisting
+
+    assert len(first) == 1
+    assert [a.alert_id for a in redelivered] == [a.alert_id for a in first]
+
+
+async def test_scope_global_correlates_logins_seen_by_different_agents(
+    geoip: GeoIpResolver,
+) -> None:
+    eng = travel_engine(travel_rule(), geoip)
+    await eng.evaluate(login(1, 0, PARIS_LOGIN, agent=AGENT))
+
+    alerts = await eng.evaluate(login(2, HOUR, TORONTO_LOGIN, agent=AGENT_B))
+
+    assert len(alerts) == 1  # no single agent saw both logins, yet the rule correlates them
+
+
+async def test_scope_agent_does_not_correlate_across_agents(geoip: GeoIpResolver) -> None:
+    eng = travel_engine(travel_rule(scope="agent"), geoip)
+    await eng.evaluate(login(1, 0, PARIS_LOGIN, agent=AGENT))
+
+    alerts = await eng.evaluate(login(2, HOUR, TORONTO_LOGIN, agent=AGENT_B))
+
+    assert alerts == []
+
+
+def test_a_stateful_rule_without_geoip_refuses_to_build_the_engine() -> None:
+    with pytest.raises(MissingGeoIp, match="ssh-impossible-travel"):
+        DetectionEngine([travel_rule()], InMemoryWindowStore())
+
+
+def test_a_disabled_stateful_rule_needs_no_geoip() -> None:
+    DetectionEngine([travel_rule(enabled=False)], InMemoryWindowStore())  # must not raise

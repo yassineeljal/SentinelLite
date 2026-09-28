@@ -139,6 +139,25 @@ class SequenceStep(BaseModel):
         return conditions
 
 
+class StatefulSpec(BaseModel):
+    """A rule that compares an event against state built from EARLIER events of the same group.
+
+    Only one kind exists today: `impossible_travel` (a login from a place that could not physically
+    be reached from the previous one, for the same group, within `window`). The `kind` field keeps
+    the door open for others without a format change.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["impossible_travel"]
+    # How far back the previous event may be to still be compared (also bounds how long a group's
+    # state is kept: older state is evicted like any window, see store.py).
+    window_seconds: Duration = Field(alias="window", gt=0)
+    max_speed_kmh: int = Field(gt=0)
+    # Below this, two points are treated as "the same place" (GeoIP is not precise): no alert.
+    min_distance_km: int = Field(ge=0)
+
+
 class SequenceSpec(BaseModel):
     """`first` (at least `first.count` events) followed by `then`, within `window`, per group."""
 
@@ -165,7 +184,7 @@ class Rule(BaseModel):
     description: str = ""
     mitre: list[Annotated[str, Field(pattern=r"^T\d{4}(\.\d{3})?$")]] = Field(min_length=1)
     severity: int = Field(ge=0, le=100)
-    type: Literal["match", "threshold", "sequence"]
+    type: Literal["match", "threshold", "sequence", "stateful"]
     match: dict[str, Condition] = Field(default_factory=dict)
     # Events that satisfy ALL these conditions are left out even if `match` holds (e.g. accounts
     # whose shell is nologin). Same syntax as `match`.
@@ -176,6 +195,7 @@ class Rule(BaseModel):
     group_by: list[str] = Field(default_factory=list)
     threshold: ThresholdSpec | None = None
     sequence: SequenceSpec | None = None
+    stateful: StatefulSpec | None = None
     cooldown_seconds: Duration = Field(default=0, alias="cooldown", ge=0)
     # Whose events are counted together. "agent" (default): each agent has its own state, so a
     # compromised agent can neither frame an IP nor disturb what other agents report. "global":
@@ -198,7 +218,9 @@ class Rule(BaseModel):
         # an alert, so a single attack raises a single alert instead of one per extra event.
         if isinstance(data, Mapping) and "cooldown" not in data and "cooldown_seconds" not in data:
             spec = data.get(str(data.get("type")))
-            if data.get("type") in ("threshold", "sequence") and isinstance(spec, Mapping):
+            if data.get("type") in ("threshold", "sequence", "stateful") and isinstance(
+                spec, Mapping
+            ):
                 if "window" in spec:
                     return {**data, "cooldown": spec["window"]}
         return data
@@ -240,6 +262,15 @@ class Rule(BaseModel):
                 )
         elif self.sequence is not None:
             raise ValueError(f"a {self.type} rule cannot have a 'sequence'")
+        if self.type == "stateful":
+            if self.stateful is None:
+                raise ValueError("a stateful rule needs a 'stateful' (kind, window, thresholds)")
+            if not self.match:
+                raise ValueError("a stateful rule needs at least one condition in 'match'")
+            if not self.group_by:
+                raise ValueError("a stateful rule needs 'group_by' (what state is kept per)")
+        elif self.stateful is not None:
+            raise ValueError(f"a {self.type} rule cannot have a 'stateful'")
         return self
 
 

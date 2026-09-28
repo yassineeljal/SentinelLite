@@ -407,3 +407,60 @@ def test_a_sequence_rule_puts_its_schedule_on_a_step() -> None:
     assert parse_rule_yaml(on_a_step).sequence.then.when is not None  # type: ignore[union-attr]
     with pytest.raises(RuleLoadError, match="steps"):
         parse_rule_yaml(at_the_top)
+
+
+# --- stateful rules (impossible travel) ---------------------------------------------------------
+
+IMPOSSIBLE_TRAVEL = """
+id: ssh-impossible-travel
+title: Impossible travel between two SSH logins
+mitre: [T1078]
+severity: 70
+type: stateful
+match: {source: linux.auth, action: login_success}
+group_by: [user_name]
+scope: global
+stateful:
+  kind: impossible_travel
+  window: 30d
+  max_speed_kmh: 900
+  min_distance_km: 300
+"""
+
+
+def test_a_stateful_rule_is_parsed_with_its_spec() -> None:
+    rule = parse_rule_yaml(IMPOSSIBLE_TRAVEL)
+
+    assert rule.type == "stateful" and rule.threshold is None and rule.sequence is None
+    assert rule.stateful is not None
+    assert rule.stateful.kind == "impossible_travel"
+    assert rule.stateful.window_seconds == 30 * 86400
+    assert (rule.stateful.max_speed_kmh, rule.stateful.min_distance_km) == (900, 300)
+    assert rule.cooldown_seconds == 30 * 86400  # defaults to the window, like threshold/sequence
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda t: t.replace("stateful:\n  kind: impossible_travel\n", "stateful:\n"),  # no kind
+        lambda t: t.replace("impossible_travel", "teleportation"),  # unknown kind
+        lambda t: t.replace("  window: 30d\n", ""),  # no window
+        lambda t: t.replace("max_speed_kmh: 900", "max_speed_kmh: 0"),
+        lambda t: t.replace("min_distance_km: 300", "min_distance_km: -1"),
+        lambda t: t.replace("match: {source: linux.auth, action: login_success}\n", ""),  # no match
+        lambda t: t.replace("group_by: [user_name]\n", ""),  # no group_by
+        lambda t: t + "threshold: {count: 3, window: 60s}\n",  # threshold forbidden
+        lambda t: t + "sequence: {window: 10m, first: {match: {a: b}}, then: {match: {a: b}}}\n",
+    ],
+)
+def test_invalid_stateful_rules_are_refused(mutate: Any) -> None:
+    with pytest.raises(RuleLoadError):
+        parse_rule_yaml(mutate(IMPOSSIBLE_TRAVEL))
+
+
+def test_a_non_stateful_rule_cannot_have_a_stateful_spec() -> None:
+    spec = "{kind: impossible_travel, window: 1d, max_speed_kmh: 900, min_distance_km: 300}"
+    text = MATCH_RULE + f"stateful: {spec}\n"
+
+    with pytest.raises(RuleLoadError, match="stateful"):
+        parse_rule_yaml(text)

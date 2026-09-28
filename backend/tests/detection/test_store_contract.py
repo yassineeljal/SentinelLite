@@ -425,6 +425,23 @@ async def test_peeking_an_unknown_key_is_empty(store: WindowStore, key: str) -> 
     assert result.count == 0 and result.evidence == [] and not result.hit
 
 
+async def test_peek_returns_the_evidence_strings_written_by_record_and_check(
+    store: WindowStore, key: str
+) -> None:
+    """A caller may store arbitrary state in `evidence` (impossible-travel encodes a location
+    there) and read it back through `peek`, not only through `record_and_check`'s own result."""
+    await store.record_and_check(
+        key, "member-1", BASE, window_ms=WINDOW, count=99, cooldown_ms=0, evidence="lat=1,lon=2"
+    )
+    await store.record_and_check(
+        key, "member-2", BASE + S, window_ms=WINDOW, count=99, cooldown_ms=0
+    )  # no evidence: falls back to the member itself, like record_and_check does
+
+    result = await store.peek(key, BASE + 10 * S, window_ms=WINDOW)
+
+    assert result.evidence == ["member-2", "lat=1,lon=2"]
+
+
 async def test_distinct_cooldown_identifies_the_trigger_by_its_event_not_by_its_value(
     store: WindowStore, key: str
 ) -> None:
