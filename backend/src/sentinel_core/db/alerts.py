@@ -132,6 +132,40 @@ def _summary(row: Any) -> AlertSummary:
     )
 
 
+@dataclass(frozen=True)
+class MitreSummaryRow:
+    technique: str  # e.g. "T1110" or "T1110.003"
+    count: (
+        int  # alerts carrying this technique, within the window (one alert may count for several)
+    )
+    latest_ts: datetime
+
+
+async def mitre_summary(session: AsyncSession, *, days: int = 30) -> list[MitreSummaryRow]:
+    """Alert counts per MITRE technique in the last `days` days, most frequent first.
+
+    An alert with several techniques (e.g. a rule mapped to both T1110 and T1078) counts once
+    towards each: this is a coverage view ("what techniques are firing"), not a partition of
+    alerts, so double-counting an alert across its own techniques is the point, not a bug.
+    """
+    if days <= 0:
+        raise ValueError("days must be positive")
+    result = await session.execute(
+        text(
+            # "n" not "count": a Row already has a .count() method, which would shadow the column.
+            "SELECT technique, count(*) AS n, max(ts) AS latest_ts FROM "
+            "(SELECT unnest(mitre) AS technique, ts FROM alerts "
+            "WHERE ts >= now() - make_interval(days => :days)) per_technique "
+            "GROUP BY technique ORDER BY n DESC, technique"
+        ),
+        {"days": days},
+    )
+    return [
+        MitreSummaryRow(technique=row.technique, count=row.n, latest_ts=row.latest_ts)
+        for row in result
+    ]
+
+
 async def list_alerts(
     session: AsyncSession, *, limit: int = 20, rule_id: str | None = None
 ) -> list[AlertSummary]:

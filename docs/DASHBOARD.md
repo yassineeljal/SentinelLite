@@ -65,12 +65,24 @@ Two routes, both requiring a valid session:
 Every future dashboard route is added to routers that depend on the same `authenticate_user`, so
 nothing is reachable by accident before it has been decided to be.
 
+## The MITRE ATT&CK summary
+
+`GET /v1/stats/mitre?days=30` (1-365, default 30): alert counts per technique in that window,
+most frequent first. One alert with several techniques (a rule mapped to more than one, e.g.
+`ssh-success-after-failures`'s `[T1110, T1078]`) counts once towards each — a coverage view of
+"what techniques are firing", not a partition of alerts, so this is deliberate. Its own router and
+URL prefix (`/v1/stats`, not `/v1/alerts/...`) on purpose: nothing about it should ever be able to
+collide with the alert-detail catch-all path. The frontend's `/mitre` page renders it as a bar per
+technique (width relative to the largest count that window), each linking to the technique's real
+attack.mitre.org page; no local name lookup is kept, so it never drifts from the real taxonomy.
+
 ## The frontend
 
 `frontend/` is a small single-page app: a login page, an alert list (auto-refreshing every 15 s,
-filterable by rule id, each row linking to its detail page), and an alert detail page (MITRE
+filterable by rule id, each row linking to its detail page), an alert detail page (MITRE
 techniques, when/who/where, the risk breakdown with every factor's reason, location and
-reputation, the evidence table) — behind a session-aware router (`ProtectedRoute` redirects to
+reputation, the evidence table), and a MITRE ATT&CK coverage page (`/mitre`) — behind a
+session-aware router (`ProtectedRoute` redirects to
 `/login` when `GET /v1/auth/me` says there is no session). Nothing here is dashboard-specific
 framework code beyond what `api/client.ts` and `auth/AuthContext.tsx` need: no state management
 library, no component kit — the surface is still small enough that plain React + `fetch` is the
@@ -87,7 +99,7 @@ same checks CI runs.
 
 ## Not done yet
 
-- **The rest of the dashboard**: map, incidents, an aggregate MITRE ATT&CK chart (the detail page shows one alert's own techniques, not a fleet-wide view).
+- **The rest of the dashboard**: map, incidents.
 - **2FA (TOTP)**: planned, not built. `role` RBAC beyond "admin can manage users" (rules, response,
   agents) arrives with the routes it gates.
 - **No account lockout** after repeated failed logins yet: a determined attacker is slowed only by

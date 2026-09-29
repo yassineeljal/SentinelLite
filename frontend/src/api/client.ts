@@ -1,4 +1,4 @@
-import type { Alert, AlertDetail, User } from "./types";
+import type { Alert, AlertDetail, MitreSummaryRow, User } from "./types";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -73,4 +73,8 @@ export function listAlerts(params: ListAlertsParams = {}): Promise<Alert[]> {
 
 export function getAlert(alertId: string): Promise<AlertDetail> {
   return request<AlertDetail>(`/v1/alerts/${encodeURIComponent(alertId)}`);
+}
+
+export function mitreSummary(days = 30): Promise<MitreSummaryRow[]> {
+  return request<MitreSummaryRow[]>(`/v1/stats/mitre?days=${days}`);
 }
