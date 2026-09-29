@@ -120,10 +120,12 @@ def failed_line(at: datetime, ip: str = "203.0.113.7", user: str = "root") -> st
     return f"{stamp} ubuntu-01 sshd[812]: Failed password for {user} from {ip} port 51234 ssh2"
 
 
-def raw(line: str, origin: str, received_at: datetime = NOW) -> RawLog:
+def raw(
+    line: str, origin: str, received_at: datetime = NOW, source: Source = Source.LINUX_AUTH
+) -> RawLog:
     return RawLog(
         agent_id=AGENT,
-        source=Source.LINUX_AUTH,
+        source=source,
         origin=origin,
         line=line,
         received_at=received_at,
@@ -178,7 +180,10 @@ async def test_every_shipped_scenario_gives_the_expected_alerts_through_the_real
     """All scenarios (attacks, benign traffic, the 2000-line normal day) through Redis, the
     normalizer, Postgres and the detector: same alerts, per rule, as the in-memory replay."""
     await pipeline.send(
-        *[raw(line, f"{scenario.name}:{i}") for i, line in enumerate(scenario.lines)]
+        *[
+            raw(line, f"{scenario.name}:{i}", source=Source(scenario.source))
+            for i, line in enumerate(scenario.lines)
+        ]
     )
 
     await pipeline.pump()

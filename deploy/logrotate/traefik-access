@@ -1,0 +1,15 @@
+# /etc/logrotate.d/traefik-access  (see docs/OPERATIONS.md, "Web access logs")
+# Traefik reopens its log on SIGUSR1. `delaycompress` keeps the newest rotated file readable, and the
+# agent finds a rotated file by its inode; it does not follow compressed files, so leave it a cycle.
+/var/log/traefik/access.log {
+    daily
+    rotate 7
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 0640 root adm
+    postrotate
+        docker kill --signal=USR1 coolify-proxy >/dev/null 2>&1 || true
+    endscript
+}

@@ -217,3 +217,14 @@ def test_an_empty_never_block_is_allowed_but_must_be_explicit(
     config = load_config(write(tmp_path, key_file, section), environ={})
 
     assert config.response is not None and config.response.never_block == ()
+
+
+def test_the_traefik_access_log_is_a_valid_source(tmp_path: Path, key_file: Path) -> None:
+    extra = '\n[[sources]]\npath = "/var/log/traefik/access.log"\nsource = "traefik.access"\n'
+
+    config = load_config(write(tmp_path, key_file, extra), environ={})
+
+    assert [(str(s.path), s.source) for s in config.sources][-1] == (
+        "/var/log/traefik/access.log",
+        "traefik.access",
+    )

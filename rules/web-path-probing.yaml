@@ -1,0 +1,23 @@
+id: web-path-probing
+title: Web scanner probing for sensitive paths
+description: >
+  Four or more DIFFERENT sensitive paths (`/.env`, `/.git/config`, `/wp-login.php`,
+  `/phpmyadmin`, path traversal...) requested by the same source IP within 60 seconds. The status
+  does not matter: a single-page app answers 200 to any unknown path, so a scanner looking for
+  `/.env` is told "success". The path class is decided by the normalizer
+  (`extra.path_class = sensitive`), on whole path segments, so `/v1/alerts/environment` is not a
+  probe. One alert per source per five minutes. Blind spots: a scanner staying under four distinct
+  paths a minute, and one path hammered repeatedly (that is a bot, not a sweep).
+mitre: [T1595.002]
+severity: 40
+type: threshold
+match:
+  source: traefik.access
+  action: http_request
+  extra.path_class: sensitive
+group_by: [src_ip]
+threshold:
+  count: 4
+  window: 60s
+  distinct: extra.path
+cooldown: 300s

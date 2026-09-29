@@ -1,0 +1,7 @@
+# source: traefik.access
+# expect: 1
+# description: Exactly four distinct sensitive paths in 30 seconds.
+{"ClientAddr":"203.0.113.50:50000","ClientHost":"203.0.113.50","DownstreamStatus":404,"RequestHost":"sentinel.example.org","RequestMethod":"GET","RequestPath":"/.env","RequestProtocol":"HTTP/2.0","RouterName":"sentinel@docker","StartUTC":"2026-09-29T10:00:00.000000000Z","entryPointName":"https","request_User-Agent":"Mozilla/5.0 zgrab/0.x"}
+{"ClientAddr":"203.0.113.50:50000","ClientHost":"203.0.113.50","DownstreamStatus":404,"RequestHost":"sentinel.example.org","RequestMethod":"GET","RequestPath":"/.git/config","RequestProtocol":"HTTP/2.0","RouterName":"sentinel@docker","StartUTC":"2026-09-29T10:00:10.000000000Z","entryPointName":"https","request_User-Agent":"Mozilla/5.0 zgrab/0.x"}
+{"ClientAddr":"203.0.113.50:50000","ClientHost":"203.0.113.50","DownstreamStatus":404,"RequestHost":"sentinel.example.org","RequestMethod":"GET","RequestPath":"/wp-login.php","RequestProtocol":"HTTP/2.0","RouterName":"sentinel@docker","StartUTC":"2026-09-29T10:00:20.000000000Z","entryPointName":"https","request_User-Agent":"Mozilla/5.0 zgrab/0.x"}
+{"ClientAddr":"203.0.113.50:50000","ClientHost":"203.0.113.50","DownstreamStatus":404,"RequestHost":"sentinel.example.org","RequestMethod":"GET","RequestPath":"/phpmyadmin/index.php","RequestProtocol":"HTTP/2.0","RouterName":"sentinel@docker","StartUTC":"2026-09-29T10:00:30.000000000Z","entryPointName":"https","request_User-Agent":"Mozilla/5.0 zgrab/0.x"}

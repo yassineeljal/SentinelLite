@@ -282,6 +282,55 @@ Postgres). The overlay gives our services the unique aliases `sentinel-postgres`
 `sentinel-redis` and points only the API at them; the workers are on the private network alone and
 are unaffected. Check with `docker compose exec api getent hosts sentinel-postgres`.
 
+## Web access logs (Traefik)
+
+The web rules (`web-path-probing`, `web-login-bruteforce`) read Traefik's access log. On the Coolify
+proxy this needs three things, none of which is on by default:
+
+1. **The log itself**, in `/data/coolify/proxy/docker-compose.yml` (keep a backup: Coolify may
+   rewrite this file when the proxy is reconfigured from its UI, and the lines must then be added back):
+
+   ```yaml
+   volumes:
+     - '/var/log/traefik:/var/log/traefik'
+   command:
+     - '--accesslog=true'
+     - '--accesslog.filepath=/var/log/traefik/access.log'
+     - '--accesslog.format=json'
+     - '--accesslog.fields.headers.defaultmode=drop'      # never log Authorization, cookies...
+     - '--accesslog.fields.headers.names.User-Agent=keep'
+   ```
+
+   ```bash
+   sudo install -d -m 0750 -o root -g adm /var/log/traefik
+   sudo install -m 0640 -o root -g adm /dev/null /var/log/traefik/access.log
+   sudo docker compose -f /data/coolify/proxy/docker-compose.yml up -d     # ~15 s without the proxy
+   sudo install -m 0644 deploy/logrotate/traefik-access /etc/logrotate.d/traefik-access
+   ```
+
+   The `adm` group is the one the agent already has for `auth.log`. Only the path is logged, never the
+   query string.
+
+2. **A router that keeps the agents out of the log** (already in `deploy/docker-compose.vps.yml`).
+   The agents reach the API through this proxy: without it, every batch they ship (and every action
+   poll, every 5 s) would be logged, shipped, logged again, forever. The `sentinel-agents` router
+   matches `/v1/ingest` and `/v1/agents/me` and sets `observability.accesslogs=false`. Check after any
+   proxy change that `grep -c agents/me /var/log/traefik/access.log` stays at 0.
+
+3. **The source in the agent's `agent.toml`**:
+
+   ```toml
+   [[sources]]
+   path = "/var/log/traefik/access.log"
+   source = "traefik.access"
+   ```
+
+   Deploy the new server version **before** adding the source: a source the server cannot normalize
+   is dead-lettered.
+
+Neither web rule is in the responder's default `SENTINEL_RESPONDER_BLOCK_RULES`: add them
+deliberately once their alerts look right.
+
 ## Automated response (dry run, then enforce)
 
 The responder decides which source addresses to block. In `dry_run` (the default) it only records

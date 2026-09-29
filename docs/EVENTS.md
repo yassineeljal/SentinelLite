@@ -48,6 +48,42 @@ unknown message before the fields means sudo refused, it is never counted as a s
 `su` (`FAILED SU`, `(to root) …`), `passwd` (password changes), `groupadd`, PAM authentication
 failures outside sudo, sshd disconnects and pre-auth closes.
 
+## `traefik.access` (Traefik's JSON access log)
+
+The web source of the VPS deployment: the reverse proxy in front of the dashboard writes one JSON
+object per request (`--accesslog.format=json`, see OPERATIONS.md). Category `web`, action
+`http_request`. Normalizer: `normalizers/traefik_access.py`.
+
+| Field | From |
+|---|---|
+| `ts` | `StartUTC` (nanoseconds are accepted) |
+| `src_ip` | `ClientHost` (kept as `null` when it is not an address) |
+| `host` | `RequestHost` |
+| `dst_port` | 443 for the `https` entry point, 80 for `http` |
+| `outcome` | `failure` for a status of 400 and above, else `success` |
+| `severity` | 30 for a sensitive path, else 10 |
+| `extra.method`, `extra.path` (cut at 512), `extra.status`, `extra.user_agent` (cut at 256) | the request |
+| `extra.path_class` | `sensitive`, `login` or `other`, decided by the normalizer |
+
+**Deliberate choices**
+
+- **Only requests that can matter are events**: a probe path whatever the answer, the login endpoint,
+  and every request answered with an error. An ordinary request that worked is dropped by the
+  normalizer (`None`, not dead-lettered): no security signal, and it would only fill the database.
+- **The path class is computed in code**, because rules can only compare values. A probe path is one
+  whose first segment is a known target (`.env`, `.git`, `wp-login.php`, `phpmyadmin`, `cgi-bin`...),
+  a sensitive file extension (`.sql`, `.bak`, `.pem`...), or a traversal (`..`, `%2e%2e`,
+  `/etc/passwd`). Whole segments only: `/v1/alerts/environment` and `/backup-policy` are not probes.
+- **The status does not decide.** A single-page app answers 200 to any unknown path, so a scanner
+  looking for `/.env` is told "success"; the probe is flagged regardless.
+- **An oversized request is not lost.** A path of several kilobytes makes the agent truncate the line
+  (8192 characters), which breaks the JSON. Rather than dead-lettering it (an attacker could hide by
+  lengthening the path), the normalizer recovers the client, status, host, method and the start of the
+  path, uses the receipt time as `ts`, and marks it `extra.truncated: true`, `path_class: sensitive`.
+- **The agent's own traffic is not logged** (a router with the access log off, see OPERATIONS.md),
+  otherwise shipping a line would create the next line, forever.
+
 ## `nginx.access`
 
-Accepted by the API, **no normalizer yet**: its lines are dead-lettered (planned with the web rules).
+Accepted by the API, **no normalizer**: its lines are dead-lettered. Nothing ships it on the VPS
+(the proxy is Traefik); the name is kept for a future Nginx deployment.
