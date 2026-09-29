@@ -15,10 +15,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from sentinel_core.api.security import limit_auth, no_store
+from sentinel_core.auth.totp import MFAUnavailable, SecretBox
 from sentinel_core.auth.user_registry import EMAIL_PATTERN, PostgresUserRepository, UserInfo
 from sentinel_core.config import Settings
 
-router = APIRouter(prefix="/v1/auth", tags=["dashboard-auth"])
+router = APIRouter(prefix="/v1/auth", tags=["dashboard-auth"], dependencies=[Depends(no_store)])
 
 COOKIE_NAME = "sl_session"
 
@@ -28,6 +30,7 @@ class LoginRequest(BaseModel):
 
     email: str = Field(max_length=255)
     password: str = Field(max_length=1024)
+    code: str = Field(default="", max_length=64)
 
     @field_validator("email")
     @classmethod
@@ -67,11 +70,30 @@ async def login(
     users: Annotated[PostgresUserRepository, Depends(get_user_repository)],
 ) -> UserResponse:
     settings: Settings = request.app.state.settings
-    user = await users.authenticate(body.email, body.password)
-    if user is None:
-        # One generic answer: never reveals whether the email exists.
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-    token = await users.create_session(user.id, timedelta(hours=settings.session_ttl_hours))
+    await limit_auth(request, f"login:{body.email.strip().lower()}")
+    try:
+        result = await users.login(
+            body.email,
+            body.password,
+            body.code,
+            timedelta(hours=settings.session_ttl_hours),
+            SecretBox(settings.mfa_encryption_key),
+        )
+    except MFAUnavailable:
+        raise HTTPException(
+            status_code=503, detail="Authentication temporarily unavailable"
+        ) from None
+    if result is None:
+        # Same response for unknown user, bad password, missing/invalid/replayed second factor.
+        raise HTTPException(
+            status_code=401, detail="Invalid email, password or authentication code"
+        )
+    user, token = result
+    set_session_cookie(response, token, settings)
+    return UserResponse(id=user.id, email=user.email, role=user.role)
+
+
+def set_session_cookie(response: Response, token: str, settings: Settings) -> None:
     response.set_cookie(
         COOKIE_NAME,
         token,
@@ -81,7 +103,6 @@ async def login(
         samesite="strict",
         path="/",
     )
-    return UserResponse(id=user.id, email=user.email, role=user.role)
 
 
 @router.post("/logout", status_code=204)

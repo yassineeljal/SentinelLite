@@ -4,6 +4,9 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { TopBar } from "./components/TopBar";
 import { AlertDetail } from "./pages/AlertDetail";
 import { Alerts } from "./pages/Alerts";
+import { Incidents } from "./pages/Incidents";
+import { IncidentDetail } from "./pages/IncidentDetail";
+import { Security } from "./pages/Security";
 import { Login } from "./pages/Login";
 import { WorldMap } from "./pages/Map";
 import { Mitre } from "./pages/Mitre";
@@ -13,6 +16,11 @@ import { Mitre } from "./pages/Mitre";
 function AlertDetailRoute() {
   const { alertId } = useParams<{ alertId: string }>();
   return <AlertDetail key={alertId} />;
+}
+
+function IncidentDetailRoute() {
+  const { incidentId } = useParams<{ incidentId: string }>();
+  return <IncidentDetail key={incidentId} />;
 }
 
 export function App() {
@@ -50,6 +58,30 @@ export function App() {
           element={
             <ProtectedRoute>
               <WorldMap />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/incidents"
+          element={
+            <ProtectedRoute>
+              <Incidents />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/incidents/:incidentId"
+          element={
+            <ProtectedRoute>
+              <IncidentDetailRoute />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/security"
+          element={
+            <ProtectedRoute>
+              <Security />
             </ProtectedRoute>
           }
         />

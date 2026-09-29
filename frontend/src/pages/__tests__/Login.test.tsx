@@ -45,7 +45,7 @@ describe("Login", () => {
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
     expect(await screen.findByText("Alerts page")).toBeInTheDocument();
-    expect(api.login).toHaveBeenCalledWith("a@b.com", "correct horse battery staple");
+    expect(api.login).toHaveBeenCalledWith("a@b.com", "correct horse battery staple", undefined);
   });
 
   it("shows the server's error message on a failed login and stays on the form", async () => {
@@ -89,4 +89,16 @@ describe("Login", () => {
     resolveLogin({ id: "1", email: "a@b.com", role: "analyst" });
     await waitFor(() => expect(screen.queryByText("Alerts page")).toBeInTheDocument());
   });
+});
+
+it("submits an authenticator or recovery code with the password", async () => {
+  vi.spyOn(api, "me").mockRejectedValue(new ApiError(401, "Not authenticated"));
+  vi.spyOn(api, "login").mockResolvedValue({ id: "1", email: "a@b.com", role: "analyst" });
+  renderLogin();
+  await userEvent.type(await screen.findByLabelText("Email"), "a@b.com");
+  await userEvent.type(screen.getByLabelText("Password"), "correct horse battery staple");
+  await userEvent.type(screen.getByLabelText("Authentication or recovery code"), "123456");
+  await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
+  expect(await screen.findByText("Alerts page")).toBeInTheDocument();
+  expect(api.login).toHaveBeenCalledWith("a@b.com", "correct horse battery staple", "123456");
 });

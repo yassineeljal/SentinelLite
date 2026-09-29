@@ -11,8 +11,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     api.me().then(setUser, () => setUser(null));
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    setUser(await api.login(email, password));
+  const login = useCallback(async (email: string, password: string, code?: string) => {
+    setUser(await api.login(email, password, code));
   }, []);
 
   const logout = useCallback(async () => {

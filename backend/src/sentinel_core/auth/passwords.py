@@ -2,6 +2,8 @@
 cost parameters to get subtly wrong.
 """
 
+import anyio
+import anyio.to_thread
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 
@@ -32,3 +34,11 @@ def verify_password(password: str, hashed: str) -> bool:
         return _hasher.verify(hashed, password)
     except (VerifyMismatchError, VerificationError, InvalidHashError):
         return False
+
+
+# Argon2 is memory-intensive: bound simultaneous work and keep it off the API event loop.
+_verifications = anyio.CapacityLimiter(2)
+
+
+async def verify_password_async(password: str, hashed: str) -> bool:
+    return await anyio.to_thread.run_sync(verify_password, password, hashed, limiter=_verifications)

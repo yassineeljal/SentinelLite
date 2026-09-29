@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from cryptography.fernet import Fernet
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -54,6 +55,26 @@ class Settings(BaseSettings):
     # deployment reachable over the network: see docs/OPERATIONS.md.
     session_ttl_hours: int = Field(default=8, gt=0)
     session_cookie_secure: bool = True
+    # Stable deployment key; missing means enrollment is unavailable, never bypass enabled 2FA.
+    mfa_encryption_key: SecretStr | None = None
+    auth_window_seconds: int = Field(default=300, ge=30, le=3600)
+    auth_account_attempts: int = Field(default=10, ge=1, le=100)
+    auth_ip_attempts: int = Field(default=50, ge=1, le=1000)
+
+    @field_validator("mfa_encryption_key", mode="before")
+    @classmethod
+    def _empty_mfa_key(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
+
+    @field_validator("mfa_encryption_key")
+    @classmethod
+    def _valid_mfa_key(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is not None:
+            try:
+                Fernet(value.get_secret_value().encode())
+            except (ValueError, TypeError):
+                raise ValueError("MFA encryption key must be a valid Fernet key") from None
+        return value
 
     # Built frontend (frontend/dist) to serve, if any: None means API-only (tests, local dev
     # against `npm run dev`'s own server). The Docker image sets this; docker-compose.yml does not

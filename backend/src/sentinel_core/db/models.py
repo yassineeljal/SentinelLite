@@ -63,6 +63,27 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
+    # TOTP needs a recoverable secret: Fernet ciphertext, with the key outside Postgres.
+    totp_secret: Mapped[str | None] = mapped_column(Text, default=None)
+    totp_last_counter: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    totp_pending_secret: Mapped[str | None] = mapped_column(Text, default=None)
+    totp_pending_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    totp_pending_session_hash: Mapped[str | None] = mapped_column(String(64), default=None)
+    recovery_code_hashes: Mapped[list[str] | None] = mapped_column(JSONB, default=None)
+
+
+class AuthRateLimit(Base):
+    """Persistent fixed-window counters; identifiers are hashed, expired rows are pruned."""
+
+    __tablename__ = "auth_rate_limits"
+    __table_args__ = (Index("ix_auth_rate_limits_expires_at", "expires_at"),)
+
+    scope_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    attempts: Mapped[int] = mapped_column(Integer)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
 
 class UserSession(Base):
     """A logged-in session. The primary key is the SHA-256 hash of the session token: only the
@@ -137,6 +158,7 @@ class AlertRecord(Base):
         Index("ix_alerts_rule_id_ts", "rule_id", "ts"),
         Index("ix_alerts_src_ip_ts", "src_ip", "ts"),
         Index("ix_alerts_risk_score", "risk_score"),
+        Index("ix_alerts_incident_id", "incident_id"),
     )
 
     alert_id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -161,3 +183,37 @@ class AlertRecord(Base):
     # the score has its own column so that it can be indexed and sorted; NULL until then.
     risk_score: Mapped[int | None] = mapped_column(SmallInteger, default=None)
     risk: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
+    # Triage: which incident (if any) an analyst has grouped this alert into. NULL until then.
+    incident_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("incidents.id"), default=None)
+
+
+class Incident(Base):
+    """A triage case grouping related alerts. No `severity` column on purpose: it is derived from
+    the linked alerts' own risk scores at query time (db/incidents.py), so it can never go stale."""
+
+    __tablename__ = "incidents"
+    __table_args__ = (
+        CheckConstraint("status IN ('new', 'investigating', 'closed')", name="status"),
+        Index("ix_incidents_status", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    title: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(16), default="new")
+    assignee_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
+class IncidentNote(Base):
+    """A free-text note an analyst added to an incident. Immutable once written (no edit/delete
+    endpoint): an incident's timeline should read the same to everyone who looks at it later."""
+
+    __tablename__ = "incident_notes"
+    __table_args__ = (Index("ix_incident_notes_incident_id", "incident_id"),)
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    incident_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("incidents.id"))
+    author_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"))
+    body: Mapped[str] = mapped_column(String(4000))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

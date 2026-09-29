@@ -1,4 +1,15 @@
-import type { Alert, AlertDetail, GeoSummaryRow, MitreSummaryRow, User } from "./types";
+import type {
+  MFAStatus,
+  MFASetup,
+  Incident,
+  IncidentDetail,
+  IncidentStatus,
+  Alert,
+  AlertDetail,
+  GeoSummaryRow,
+  MitreSummaryRow,
+  User,
+} from "./types";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -43,10 +54,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export function login(email: string, password: string): Promise<User> {
+export function login(email: string, password: string, code?: string): Promise<User> {
   return request<User>("/v1/auth/login", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, code }),
   });
 }
 
@@ -81,4 +92,92 @@ export function mitreSummary(days = 30): Promise<MitreSummaryRow[]> {
 
 export function geoSummary(days = 30): Promise<GeoSummaryRow[]> {
   return request<GeoSummaryRow[]>(`/v1/stats/geo?days=${days}`);
+}
+
+export function listIncidents(status?: IncidentStatus): Promise<Incident[]> {
+  return request<Incident[]>(`/v1/incidents${status ? `?status=${status}` : ""}`);
+}
+
+export function createIncident(title: string, alertIds: string[]): Promise<Incident> {
+  return request<Incident>("/v1/incidents", {
+    method: "POST",
+    body: JSON.stringify({ title, alert_ids: alertIds }),
+  });
+}
+
+export function getIncident(id: string): Promise<IncidentDetail> {
+  return request<IncidentDetail>(`/v1/incidents/${encodeURIComponent(id)}`);
+}
+
+export function setIncidentStatus(id: string, status: IncidentStatus): Promise<void> {
+  return request<void>(`/v1/incidents/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export function claimIncident(id: string): Promise<void> {
+  return request<void>(`/v1/incidents/${encodeURIComponent(id)}/claim`, { method: "POST" });
+}
+
+export function unassignIncident(id: string): Promise<void> {
+  return request<void>(`/v1/incidents/${encodeURIComponent(id)}/assignee`, { method: "DELETE" });
+}
+
+export function addIncidentNote(id: string, body: string): Promise<void> {
+  return request<void>(`/v1/incidents/${encodeURIComponent(id)}/notes`, {
+    method: "POST",
+    body: JSON.stringify({ body }),
+  });
+}
+
+export function linkIncidentAlerts(id: string, alertIds: string[]): Promise<void> {
+  return request<void>(`/v1/incidents/${encodeURIComponent(id)}/alerts`, {
+    method: "POST",
+    body: JSON.stringify({ alert_ids: alertIds }),
+  });
+}
+
+export function unlinkIncidentAlert(id: string, alertId: string): Promise<void> {
+  return request<void>(
+    `/v1/incidents/${encodeURIComponent(id)}/alerts/${encodeURIComponent(alertId)}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+export function mfaStatus(): Promise<MFAStatus> {
+  return request<MFAStatus>("/v1/auth/2fa");
+}
+
+export function startMfa(password: string): Promise<MFASetup> {
+  return request<MFASetup>("/v1/auth/2fa/setup", {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
+}
+
+export function confirmMfa(password: string, code: string): Promise<{ recovery_codes: string[] }> {
+  return request("/v1/auth/2fa/confirm", {
+    method: "POST",
+    body: JSON.stringify({ password, code }),
+  });
+}
+
+export function regenerateRecoveryCodes(
+  password: string,
+  code: string,
+): Promise<{ recovery_codes: string[] }> {
+  return request("/v1/auth/2fa/recovery-codes", {
+    method: "POST",
+    body: JSON.stringify({ password, code }),
+  });
+}
+
+export function disableMfa(password: string, code: string): Promise<void> {
+  return request("/v1/auth/2fa/disable", {
+    method: "POST",
+    body: JSON.stringify({ password, code }),
+  });
 }

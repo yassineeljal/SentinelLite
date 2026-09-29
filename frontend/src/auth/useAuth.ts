@@ -4,7 +4,7 @@ import type { User } from "../api/types";
 export interface AuthState {
   // undefined: not checked yet (the app is asking GET /v1/auth/me). null: checked, not logged in.
   user: User | null | undefined;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, code?: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 

@@ -37,6 +37,7 @@ function detail(overrides: Partial<AlertDetailData> = {}): AlertDetailData {
         raw: "Failed password for root from 185.220.101.1 port 4422 ssh2",
       },
     ],
+    incident_id: null,
     detection_latency_ms: 473,
     enrichment: {
       ip_scope: "public",
@@ -142,4 +143,17 @@ describe("AlertDetail", () => {
 
     expect(screen.getByRole("link", { name: /Back to alerts/ })).toHaveAttribute("href", "/alerts");
   });
+});
+
+it("opens the existing incident instead of offering a duplicate case", async () => {
+  const id = "79dbe125-6064-46da-8234-102e038a788a";
+  vi.spyOn(api, "getAlert").mockResolvedValue(detail({ incident_id: id }));
+  renderDetail();
+  expect(await screen.findByRole("link", { name: "View linked incident" })).toHaveAttribute(
+    "href",
+    `/incidents/${id}`,
+  );
+  expect(
+    screen.queryByRole("link", { name: "Create incident from this alert" }),
+  ).not.toBeInTheDocument();
 });
