@@ -30,7 +30,7 @@ src/
 ├── api/        # typed fetch client + response types (kept in sync by hand with the backend)
 ├── auth/       # session state: AuthProvider, useAuth()
 ├── components/ # TopBar, ProtectedRoute
-└── pages/      # Login, Alerts, AlertDetail, Mitre
+└── pages/      # Login, Alerts, AlertDetail, Mitre, Map
 ```
 
 Not built yet: the map, the MITRE ATT&CK chart, incidents, 2FA (see `docs/DEVLOG.md` for what

@@ -76,12 +76,25 @@ collide with the alert-detail catch-all path. The frontend's `/mitre` page rende
 technique (width relative to the largest count that window), each linking to the technique's real
 attack.mitre.org page; no local name lookup is kept, so it never drifts from the real taxonomy.
 
+## The source-location map
+
+`GET /v1/stats/geo?days=30` (1-365): alert counts grouped by city, for alerts with GeoIP
+coordinates only (a non-public source, or a public one the database does not know, has nothing to
+plot). Grouped by city and country code rather than exact coordinates, so repeated attacks from the
+same metro area show as one sized dot instead of a scatter of near-duplicate points; the largest
+`risk_score` seen in that city, within the window, decides its colour (the same low/medium/high/
+critical scale as everywhere else in the dashboard). The frontend's `/map` page is a plain
+equirectangular SVG scatter plot (a lat/lon graticule, no coastlines) — honestly a lightweight v1,
+not a polished basemap; a real map library (e.g. Leaflet with tiles) is the natural next step if
+this needs to look like an actual map rather than a chart of where things are.
+
 ## The frontend
 
 `frontend/` is a small single-page app: a login page, an alert list (auto-refreshing every 15 s,
 filterable by rule id, each row linking to its detail page), an alert detail page (MITRE
 techniques, when/who/where, the risk breakdown with every factor's reason, location and
-reputation, the evidence table), and a MITRE ATT&CK coverage page (`/mitre`) — behind a
+reputation, the evidence table), a MITRE ATT&CK coverage page (`/mitre`), and a source-location
+map (`/map`) — behind a
 session-aware router (`ProtectedRoute` redirects to
 `/login` when `GET /v1/auth/me` says there is no session). Nothing here is dashboard-specific
 framework code beyond what `api/client.ts` and `auth/AuthContext.tsx` need: no state management
@@ -99,7 +112,7 @@ same checks CI runs.
 
 ## Not done yet
 
-- **The rest of the dashboard**: map, incidents.
+- **The rest of the dashboard**: incidents. The map has no real basemap yet (see above).
 - **2FA (TOTP)**: planned, not built. `role` RBAC beyond "admin can manage users" (rules, response,
   agents) arrives with the routes it gates.
 - **No account lockout** after repeated failed logins yet: a determined attacker is slowed only by

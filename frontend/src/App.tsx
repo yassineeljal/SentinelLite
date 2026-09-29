@@ -5,6 +5,7 @@ import { TopBar } from "./components/TopBar";
 import { AlertDetail } from "./pages/AlertDetail";
 import { Alerts } from "./pages/Alerts";
 import { Login } from "./pages/Login";
+import { WorldMap } from "./pages/Map";
 import { Mitre } from "./pages/Mitre";
 
 // Keyed on alertId so React remounts AlertDetail (fresh state) when navigating from one alert's
@@ -41,6 +42,14 @@ export function App() {
           element={
             <ProtectedRoute>
               <Mitre />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/map"
+          element={
+            <ProtectedRoute>
+              <WorldMap />
             </ProtectedRoute>
           }
         />

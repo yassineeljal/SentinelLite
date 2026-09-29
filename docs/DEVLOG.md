@@ -13,6 +13,27 @@ Entry template:
 
 ---
 
+## 2026-09-29 — M4 (step 5) — Source-location map (PR #26)
+
+**Housekeeping** — PR #25 (MITRE ATT&CK coverage) was merged into `main` on request; its CI is green.
+
+**What**
+- **`db.alerts.geo_summary(session, days=30)`**: alert counts grouped by city (only alerts with GeoIP coordinates; a non-public or unresolved source contributes nothing), with a representative lat/lon, the worst `risk_score` seen there, and the most recent alert time. Grouped by city and country code rather than exact coordinates, so repeated attacks from one metro area show as one sized dot, not a scatter of near-duplicates.
+- **`GET /v1/stats/geo?days=`** (1-365, default 30), alongside `/v1/stats/mitre` on the same router.
+- **`/map` page**: a plain equirectangular SVG scatter plot — a lat/lon graticule, points sized by `sqrt(count)` (area-proportional) and coloured by the same low/medium/high/critical risk scale used everywhere else, a legend, a 7/30/90-day window selector. No basemap or coastlines: an honest lightweight v1, documented as such, with a real map library (Leaflet + tiles) as the natural upgrade if it needs to look like an actual map.
+- Docs: `DASHBOARD.md`, `frontend/README.md`.
+
+**How verified**
+- `ruff`, `mypy --strict` clean; **901 backend tests pass** with real Redis and Postgres (8 new for `geo_summary`: same-city grouping, different cities as separate rows, the worst risk score per city, non-public/unenriched/unresolved addresses excluded, the window boundary, sort order, an invalid window rejected; 3 for the route). 4 mutation checks: 3 genuinely caught (window filter, sort order, wrong URL), one (dropping only the `latitude IS NOT NULL` clause while `longitude IS NOT NULL` stayed) is an equivalent mutant confirmed by testing directly — removing *both* null-checks together does break the excluded-address tests, so the redundancy is real but harmless, not a gap.
+- Frontend: 7 new component tests (a point renders with a summary tooltip, coloured by risk level including "unscored", empty state, error state, refetching on a window change, a legend sorted by count) — **43 total**, `typecheck`/`lint`/`format:check`/`build` all clean. A genuine test bug this time: two locations' names appear in both an SVG `<title>` and the legend list, so `findByText(/Berlin/)` matched twice and threw "found multiple elements" — fixed with `findAllByText`, not by making the query looser in a way that would hide a real duplication bug.
+- **Real stack, real browser**: logged in, opened `/map`, and confirmed three real cities (Berlin, Mountain View, Frankfurt am Main) plotted at geographically correct positions with correctly proportional, correctly coloured circles and a matching legend — screenshot checked, and the projected coordinates cross-checked against the same formula's own component test. Test user revoked afterward.
+
+**Not done / limits**: no real basemap (graticule only); the day-window choices are fixed (7/30/90); still no incidents; no 2FA; no automated browser E2E test in CI.
+
+**Next**: your call again — incidents, RBAC as routes need it, 2FA, a real basemap for `/map`, or back to M3.
+
+---
+
 ## 2026-09-29 — M4 (step 4) — MITRE ATT&CK coverage view (PR #25)
 
 **Housekeeping** — PR #24 (alert detail view) was merged into `main` on request; its CI is green.

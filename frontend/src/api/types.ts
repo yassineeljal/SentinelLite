@@ -92,3 +92,14 @@ export interface MitreSummaryRow {
   count: number;
   latest_ts: string;
 }
+
+export interface GeoSummaryRow {
+  country_code: string | null;
+  country: string | null;
+  city: string | null;
+  latitude: number;
+  longitude: number;
+  count: number;
+  max_risk_score: number | null;
+  latest_ts: string;
+}
