@@ -1,0 +1,9 @@
+version: 2
+secret:
+  ignored_matches:
+    # RFC 6238 Appendix B published test vector (ASCII "12345678901234567890",
+    # base32-encoded), used in backend/tests/auth/test_totp.py. Not a secret:
+    # it is the standard public seed the RFC itself defines for conformance
+    # testing, reproduced verbatim by every TOTP implementation's test suite.
+    - name: "RFC 6238 Appendix B test vector"
+      match: GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ

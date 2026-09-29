@@ -62,6 +62,12 @@ Entry template:
   the test's cookie domain. Neither required loosening production verification.
 - QRCode's overloaded callback/Promise typings made a test mock fail strict TypeScript despite
   passing at runtime; an explicit Promise-returning mock resolved the type mismatch.
+- GitGuardian's hosted GitHub App check flagged the TOTP test suite's RFC 6238 Appendix B test
+  vector as a high-entropy secret — a real false positive (it is the RFC's own published
+  conformance seed, not a credential). The App scans server-side and does not read a repo-level
+  ignore config, so a `secrets` CI job now runs `ggshield` directly against the PR diff, with the
+  vector listed and explained in `.gitguardian.yaml` (`OPERATIONS.md`); the hosted App check
+  remains a separate, non-blocking integration (`main` has no required status checks).
 
 **Not done / limits**: enrollment is optional; it needs a configured deployment encryption key.
 No automatic key rotation, WebAuthn, email/SMS fallback, password-reset or admin factor-reset route,

@@ -131,6 +131,15 @@ The Postgres tests truncate `agents`, `events` and `events_dead_letter` in the t
 `SENTINEL_TEST_DATABASE_URL` at a database that holds real data. CI runs the same tests with
 service containers.
 
+## Secret scanning in CI
+
+The `secrets` CI job runs [ggshield](https://github.com/GitGuardian/ggshield-action) against the
+PR diff, using the repo secret `GITGUARDIAN_API_KEY` (set once with
+`gh secret set GITGUARDIAN_API_KEY`, never committed). Known non-secrets (e.g. RFC test vectors
+used in tests) are listed, with a reason, in `.gitguardian.yaml` at the repo root — this file is
+read by `ggshield` itself, not by GitGuardian's separate hosted GitHub App check, which ignores it
+and must instead be resolved per-incident on the GitGuardian dashboard.
+
 ## Dashboard accounts
 
 See [`DASHBOARD.md`](DASHBOARD.md) for the design. There is no self-registration: create the first
