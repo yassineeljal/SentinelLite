@@ -90,8 +90,8 @@ def test_the_normalizer_is_registered_for_its_source() -> None:
     [
         "/.env", "/.git/config", "/.GIT/HEAD", "/wp-login.php", "/wp-admin/setup-config.php",
         "/phpmyadmin/index.php", "/cgi-bin/luci", "/actuator/env", "/backup.sql", "/db.SQL",
-        "/site.tar.gz", "/.npmrc", "/.htpasswd", "/../../etc/passwd", "/a/..%2f..%2fetc/shadow", "/x/%2E%2E/y",
-        "/download?f=/etc/passwd", "/proc/self/environ",
+        "/site.tar.gz", "/.npmrc", "/../../etc/passwd", "/a/..%2f..%2fetc/shadow", "/x/%2E%2E/y",
+        "/download?f=/etc/passwd", "/proc/self/environ", "/.htpasswd",
     ],
 )  # fmt: skip
 def test_probe_paths_are_sensitive(path: str) -> None:
