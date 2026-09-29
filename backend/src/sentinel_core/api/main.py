@@ -1,7 +1,11 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+import anyio.to_thread
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -79,4 +83,45 @@ def create_app(
     async def healthz() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
 
+    if settings.static_dir is not None:
+        _mount_frontend(app, settings.static_dir)
+
     return app
+
+
+def _resolve_static_path(static_dir: Path, full_path: str) -> Path:
+    """The file `full_path` names inside `static_dir`, or `index.html` (the SPA fallback).
+
+    Module-level and pure (a `Path` in, a `Path` out) specifically so the path-escape defence can
+    be tested directly, independent of whatever normalisation the ASGI server or Starlette's own
+    routing already does to the raw HTTP request path before this ever runs: relying on that
+    upstream behaviour alone, untested, is how this exact class of bug hides.
+    """
+    resolved_root = static_dir.resolve()
+    # A path that escapes static_dir (e.g. "../..") must never be served or even stat'd.
+    candidate = (static_dir / full_path).resolve()
+    if candidate.is_relative_to(resolved_root) and candidate.is_file():
+        return candidate
+    index = static_dir / "index.html"
+    if not index.is_file():
+        raise HTTPException(status_code=404, detail="Not Found")
+    return index
+
+
+def _mount_frontend(app: FastAPI, static_dir: Path) -> None:
+    """Serve the built dashboard (frontend/dist) from the same origin as the API.
+
+    Same-origin on purpose: the session cookie is SameSite=Strict (docs/DASHBOARD.md), which a
+    separate frontend origin would break without loosening that setting. Registered LAST, after
+    every API router, so `/v1/*` and `/healthz` are always matched first; this catch-all only
+    ever sees requests nothing else claimed, and answers them with the client-routed app's
+    `index.html` so React Router's own routes (e.g. `/alerts`) work on a hard refresh too.
+    """
+    assets_dir = static_dir / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend-assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa(full_path: str) -> FileResponse:
+        target = await anyio.to_thread.run_sync(_resolve_static_path, static_dir, full_path)
+        return FileResponse(target)

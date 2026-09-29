@@ -1,10 +1,10 @@
-# Dashboard: authentication
+# Dashboard
 
-Who can see alerts, and how they prove who they are. Code in
+Who can see alerts, how they prove who they are, and the web app they see them in. Backend code in
 `backend/src/sentinel_core/auth/` (users, passwords, sessions) and `backend/src/sentinel_core/api/`
-(`auth.py`, `alerts.py`). The frontend (React + Vite + TS, ADR 9) and the rest of the analyst
-workflow (map, incidents, MITRE chart) are not built yet: this step is the account system and the
-first protected API endpoint they will sit behind.
+(`auth.py`, `alerts.py`); frontend in `frontend/` (React + Vite + TS, ADR 9, its own
+[`frontend/README.md`](../frontend/README.md)). Not built yet: the map, incidents, the MITRE
+ATT&CK chart, 2FA.
 
 ## Accounts
 
@@ -58,8 +58,27 @@ to see evidence with detection latency until a dedicated endpoint is built along
 the dashboard. Every future dashboard route is added to routers that depend on the same
 `authenticate_user`, so nothing is reachable by accident before it has been decided to be.
 
+## The frontend
+
+`frontend/` is a small single-page app: a login page and an alert list (auto-refreshing every
+15 s, filterable by rule id), behind a session-aware router (`ProtectedRoute` redirects to
+`/login` when `GET /v1/auth/me` says there is no session). Nothing here is dashboard-specific
+framework code beyond what `api/client.ts` and `auth/AuthContext.tsx` need: no state management
+library, no component kit — the surface is still small enough that plain React + `fetch` is the
+simplest thing that works, and will be revisited if that stops being true.
+
+**Same origin, on purpose** (ADR 35): the API serves the built app directly (a catch-all route
+falls back to `index.html` for client-routed paths like `/alerts`, so a hard refresh or a pasted
+link still works), and `vite.config.ts` proxies `/v1` to the backend in dev for the same reason —
+neither CORS nor a laxer `SameSite` is ever needed. `deploy/Dockerfile` builds `frontend/dist` in
+its own stage and copies it into the final image; `SENTINEL_STATIC_DIR` (baked into the image) is
+what tells the API to serve it. Run `npm run dev` (proxies to a backend on `:8000`) or
+`npm run build && npm run preview` locally; `npm test`/`typecheck`/`lint`/`format:check` are the
+same checks CI runs.
+
 ## Not done yet
 
+- **The rest of the dashboard**: map, incidents, MITRE ATT&CK chart. The alert list has no evidence view yet either (`sentinel alerts show` still has more detail than the API exposes).
 - **2FA (TOTP)**: planned, not built. `role` RBAC beyond "admin can manage users" (rules, response,
   agents) arrives with the routes it gates.
 - **No account lockout** after repeated failed logins yet: a determined attacker is slowed only by
