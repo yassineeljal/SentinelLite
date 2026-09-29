@@ -1,5 +1,5 @@
 """Administration CLI: `sentinel agents|users create|list|revoke`, `sentinel alerts list|show`,
-`sentinel blocks`, `sentinel unblock`, `sentinel allowlist add|list|remove`.
+`sentinel blocks`, `sentinel unblock`, `sentinel report`, `sentinel allowlist add|list|remove`.
 
 In the compose stack:  docker compose exec api sentinel agents create --name ubuntu-01 --os linux
 `sentinel users create` is the only way to get a dashboard account: there is no self-registration.
@@ -12,6 +12,7 @@ import getpass
 import re
 import sys
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -34,6 +35,7 @@ from sentinel_core.db.responses import (
     remove_allowlist,
 )
 from sentinel_core.db.session import create_engine, create_sessionmaker
+from sentinel_core.report import collect, render
 from sentinel_core.terminal import sanitize
 
 # Alert id prefixes are used in a LIKE pattern: only hexadecimal is accepted (no wildcards).
@@ -77,6 +79,10 @@ def build_parser() -> argparse.ArgumentParser:
     blocks.set_defaults(command="list")
     blocks.add_argument("--limit", type=int, default=20)
 
+    report = sub.add_parser("report", help="a printable HTML security report (print it to PDF)")
+    report.add_argument("--days", type=int, default=7, help="period covered (default 7)")
+    report.add_argument("--output", default="-", help="file to write, or - for standard output")
+
     unblock = sub.add_parser("unblock", help="lift the active blocks of an address, now")
     unblock.add_argument("address")
 
@@ -101,6 +107,8 @@ async def _run(args: argparse.Namespace) -> int:
     try:
         if args.group == "alerts":
             return await _alerts(args, create_sessionmaker(engine))
+        if args.group == "report":
+            return await _report(args, create_sessionmaker(engine))
         if args.group in ("blocks", "unblock", "allowlist"):
             return await _response(args, create_sessionmaker(engine))
         if args.group == "users":
@@ -194,6 +202,20 @@ async def _response(args: argparse.Namespace, sessions: async_sessionmaker[Async
             return 1
         print("error: not on the allowlist", file=sys.stderr)
         return 1
+
+
+async def _report(args: argparse.Namespace, sessions: async_sessionmaker[AsyncSession]) -> int:
+    if not 1 <= args.days <= 365:
+        print("error: --days must be between 1 and 365", file=sys.stderr)
+        return 1
+    async with sessions() as session:
+        page = render(await collect(session, args.days))
+    if args.output == "-":
+        sys.stdout.write(page)
+    else:
+        await asyncio.to_thread(Path(args.output).write_text, page, encoding="utf-8")
+        print(f"wrote {args.output}: open it in a browser and print it to PDF", file=sys.stderr)
+    return 0
 
 
 async def _unblock(session: AsyncSession, address: str) -> int:
