@@ -282,6 +282,28 @@ Postgres). The overlay gives our services the unique aliases `sentinel-postgres`
 `sentinel-redis` and points only the API at them; the workers are on the private network alone and
 are unaffected. Check with `docker compose exec api getent hosts sentinel-postgres`.
 
+## Agent watchdog (a dead agent must not be silent)
+
+If an agent dies, detection is blind on that host and nothing complains. So every log agent sends a
+**heartbeat** once a minute (`POST /v1/agents/me/heartbeat`, its own key, even with nothing to ship:
+a quiet host would otherwise look dead), and the `watchdog` service (always on in the compose stack)
+announces, in its log and on Discord when `SENTINEL_DISCORD_WEBHOOK_URL` is set:
+
+- `🔇 SILENT agent <name> has not reported for N min` once an agent that had reported has not for
+  `SENTINEL_WATCHDOG_SILENCE_SECONDS` (default 300, minimum 120);
+- `🔔 agent <name> is reporting again` when it is back.
+
+Rules: an agent that **never** reported is not announced (it has just not been deployed yet); a revoked
+one never is; each silence is announced once (the database update that marks it is the ticket, so a
+restart or a second watchdog does not repeat it). `sentinel agents list` shows `last seen` for each
+agent. The heartbeat is sent from the shipper's own loop, so it proves that loop is running; while the
+platform is unreachable neither heartbeats nor logs get through, and the watchdog (on the platform
+side) cannot tell that from a dead agent: it announces both.
+
+It watches the **log agent** only: the enforcer polls for actions but sends no heartbeat, and a stopped
+enforcer is visible as blocks that never get applied. Old agents (before the heartbeat) must be
+upgraded, or they are announced as silent as soon as they have reported once and gone quiet.
+
 ## Web access logs (Traefik)
 
 The web rules (`web-path-probing`, `web-login-bruteforce`) read Traefik's access log. On the Coolify

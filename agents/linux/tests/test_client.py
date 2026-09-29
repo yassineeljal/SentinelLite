@@ -142,3 +142,36 @@ def test_the_key_never_appears_in_logs_or_representations(
 
     assert KEY not in repr(http_client) and KEY not in caplog.text
     assert "s" * 43 not in caplog.text
+
+
+def test_a_heartbeat_is_an_authenticated_empty_post(server: FakeServer) -> None:
+    server.default = Reply(204)
+
+    result = client(server).heartbeat()
+
+    assert result == Accepted(0)
+    (request,) = server.requests
+    assert (request.method, request.path) == ("POST", "/v1/agents/me/heartbeat")
+    assert request.headers["authorization"] == f"Bearer {KEY}"
+
+
+def test_a_refused_key_on_a_heartbeat_is_reported(server: FakeServer) -> None:
+    server.default = Reply(401, {"detail": "no"})
+
+    assert client(server).heartbeat() == Unauthorized()
+
+
+@pytest.mark.parametrize("status", [500, 503])
+def test_a_failing_platform_makes_a_heartbeat_unavailable(server: FakeServer, status: int) -> None:
+    server.default = Reply(status)
+
+    assert isinstance(client(server).heartbeat(), Unavailable)
+
+
+def test_an_unreachable_platform_makes_a_heartbeat_unavailable() -> None:
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+
+    assert isinstance(IngestClient(f"http://127.0.0.1:{port}", KEY).heartbeat(), Unavailable)

@@ -28,6 +28,7 @@ class AgentInfo:
     os: str
     created_at: datetime
     revoked_at: datetime | None
+    last_seen_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ def _info(row: Agent) -> AgentInfo:
         os=row.os,
         created_at=row.created_at,
         revoked_at=row.revoked_at,
+        last_seen_at=row.last_seen_at,
     )
 
 

@@ -24,6 +24,13 @@ parsing happens on the platform.
 - **A refused key stops it** (`401`, exit 2): a revoked key needs a human, not a retry loop. The
   refused lines are *not* acknowledged, so they are sent once a new key is installed.
 
+## Heartbeat
+
+Once a minute, and at start, the agent calls `POST /v1/agents/me/heartbeat` (empty body, its own key),
+so that the platform's watchdog can tell an idle host from a dead agent (OPERATIONS.md, "Agent
+watchdog"). It is sent from the shipping loop: a failure is logged and never stops the shipping, a
+refused key stops the agent like a refused batch (exit 2). `--once` sends none.
+
 ## Log handling
 
 | Situation | Behaviour |

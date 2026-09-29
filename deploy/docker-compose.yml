@@ -142,6 +142,21 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Announces (log, and Discord when SENTINEL_DISCORD_WEBHOOK_URL is set) an agent that stopped
+  # sending its heartbeat, and again when it is back. Always on: it is tiny, and a dead agent
+  # otherwise makes detection blind without any error anywhere.
+  watchdog:
+    build: *app-build
+    command: ["python", "-m", "sentinel_core.workers.watchdog"]
+    environment:
+      <<: *database-url
+      SENTINEL_WATCHDOG_SILENCE_SECONDS: ${SENTINEL_WATCHDOG_SILENCE_SECONDS:-300}
+      SENTINEL_DISCORD_WEBHOOK_URL: ${SENTINEL_DISCORD_WEBHOOK_URL:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   api:
     build: *app-build
     environment:

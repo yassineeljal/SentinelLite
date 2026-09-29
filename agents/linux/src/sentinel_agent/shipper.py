@@ -37,6 +37,7 @@ logger = logging.getLogger("sentinel_agent.shipper")
 MAX_BACKOFF_SECONDS = 60
 MAX_CONSECUTIVE_REJECTIONS = 10
 STATS_INTERVAL_SECONDS = 60
+HEARTBEAT_INTERVAL_SECONDS = 60
 
 
 class AuthenticationError(Exception):
@@ -85,6 +86,7 @@ class Shipper:
         wait: Callable[[float], bool] | None = None,
         rng: random.Random | None = None,
         max_unavailable: int | None = None,
+        heartbeat: Callable[[], Result] | None = None,
     ) -> None:
         self._config = config
         self._client = client
@@ -95,6 +97,8 @@ class Shipper:
         self._consecutive_rejections = 0
         self._max_unavailable = max_unavailable  # None: retry forever (daemon mode)
         self._unavailable = 0
+        self._heartbeat = heartbeat
+        self._last_heartbeat: float | None = None
         self._tailers: list[tuple[Source, Tailer]] = [
             (source, Tailer(source.path, store.get(source.path), config.start_at))
             for source in config.sources
@@ -128,6 +132,7 @@ class Shipper:
         last_stats, sent_then, dropped_then = time.monotonic(), 0, 0
         try:
             while not self._stop.is_set():
+                self._maybe_heartbeat()
                 if self.run_once() == 0 and self._wait(self._config.poll_interval):
                     break
                 if time.monotonic() - last_stats >= STATS_INTERVAL_SECONDS:
@@ -142,6 +147,26 @@ class Shipper:
         finally:
             for _, tailer in self._tailers:
                 tailer.close()
+
+    # -- liveness ---------------------------------------------------------------------------
+
+    def _maybe_heartbeat(self) -> None:
+        """Once a minute (and at start): proof of life for the platform's watchdog. A failure is
+        only logged, it must never stop the shipping; a refused key is as fatal as for a batch."""
+        if self._heartbeat is None:
+            return
+        now = time.monotonic()
+        if (
+            self._last_heartbeat is not None
+            and now - self._last_heartbeat < HEARTBEAT_INTERVAL_SECONDS
+        ):
+            return
+        self._last_heartbeat = now
+        result = self._heartbeat()
+        if isinstance(result, Unauthorized):
+            raise AuthenticationError("the server refused the agent key (unknown or revoked)")
+        if not isinstance(result, Accepted):
+            logger.warning("heartbeat not delivered: %s", result)
 
     # -- delivery ---------------------------------------------------------------------------
 

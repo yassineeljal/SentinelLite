@@ -130,7 +130,8 @@ async def _agents(args: argparse.Namespace, registry: PostgresAgentRepository) -
     for agent in await registry.list_agents():
         status = "revoked" if agent.revoked_at else "active"
         since = f"{agent.created_at:%Y-%m-%d}"
-        print(f"{agent.id}  {agent.name:<24} {agent.os:<8} {status:<8} {since}")
+        seen = f"{agent.last_seen_at:%Y-%m-%d %H:%M:%S}Z" if agent.last_seen_at else "never"
+        print(f"{agent.id}  {agent.name:<24} {agent.os:<8} {status:<8} {since}  last seen {seen}")
     return 0
 
 
