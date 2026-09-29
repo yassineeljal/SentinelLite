@@ -13,6 +13,28 @@ Entry template:
 
 ---
 
+## 2026-09-29 — M5 (step 4) — Discord notifications
+
+**What**
+- `notify/discord.py` and `SENTINEL_DISCORD_WEBHOOK_URL`: the responder posts one message per batch for blocks (`BLOCKED`, or `would block` in dry run) and for releases at TTL end. Wired in compose, `.env.example`, OPERATIONS.md.
+
+**Why**
+The operator should learn of an automatic block without opening the dashboard, and a wrong block should be noticed within minutes.
+
+**How verified**
+- 25 unit tests (URL validation, message format, mock transport, failure modes, secret never in `repr` or logs) and 3 integration tests on real Redis/Postgres (block then release announced, a redelivered alert not announced twice, Discord answering 500 changes nothing). Full suite 1135 passed; `ruff`, `mypy --strict` clean.
+
+**Problems & lessons**
+- The webhook URL is a bearer secret and `httpx` logs every request URL at INFO: the notifier silences that logger, and a test asserts it. An invalid URL is rejected at startup with a fixed message: pydantic's own validation error would have printed the value, so the check is not a `Settings` validator.
+- Announcements go out after the commit and are dropped, not retried: a crash between the two loses one message, never a decision.
+
+**Not done yet / limits**
+- No notification for skipped alerts (allowlisted, rate-limited) nor for `sentinel unblock` run by hand; no retry when Discord is down.
+
+**Next**: dashboard page for blocks; review the dry-run figures then enable `enforce`.
+
+---
+
 ## 2026-09-29 — M5 (step 3) — `sentinel unblock`
 
 **What**

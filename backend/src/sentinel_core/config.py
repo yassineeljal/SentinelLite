@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     # (`sentinel allowlist`) and of every non-public range: your own address, the platform's.
     responder_allowlist: str = ""
     responder_batch_size: int = Field(default=100, gt=0)
+    # Optional: a Discord webhook the responder posts to on every block and release. A secret.
+    discord_webhook_url: SecretStr | None = None
     responder_claim_idle_ms: int = Field(default=60_000, ge=0)
 
     # Ingestion limits. A full batch is 500 lines of up to 8192 chars; JSON escaping can
@@ -77,6 +79,13 @@ class Settings(BaseSettings):
     auth_window_seconds: int = Field(default=300, ge=30, le=3600)
     auth_account_attempts: int = Field(default=10, ge=1, le=100)
     auth_ip_attempts: int = Field(default=50, ge=1, le=1000)
+
+    @field_validator("discord_webhook_url", mode="before")
+    @classmethod
+    def _empty_discord_webhook(cls, value: object) -> object:
+        # Not validated here: pydantic's error would print the value, which holds a secret token.
+        # The responder validates it at startup without echoing it.
+        return None if isinstance(value, str) and not value.strip() else value
 
     @field_validator("mfa_encryption_key", mode="before")
     @classmethod
