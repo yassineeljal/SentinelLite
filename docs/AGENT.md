@@ -151,8 +151,9 @@ Exit codes: 0 normal stop, 1 configuration error or no `[response]` section, 2 k
   but **not normalized yet**: its lines are dead-lettered until that normalizer exists).
 - Polling (0.5 s), no inotify. Compressed rotated files are not followed. `copytruncate` can lose
   the few lines written between the last read and the truncation.
-- The enforcer exists but is validated with unit tests and an end-to-end run with the `log` backend
-  only; the `iptables` backend and its systemd unit have not yet run on a real host. `nftables` and
-  `ufw` are not supported (rules go through `iptables`, which is `iptables-nft` on Ubuntu 24.04).
+- The enforcer was validated on the Ubuntu 24.04 VPS (2026-09-29): a real block through `iptables`
+  (rule in the `SENTINEL` chain, acknowledged, lifted by the agent at its end time, then released by
+  the platform with an `unblock`). Other distributions and `nftables`-native or `ufw`-only setups are
+  not covered (rules go through `iptables`, which is `iptables-nft` on Ubuntu 24.04).
 - No TLS client certificates, no proxy support.
 - The systemd unit is validated on Ubuntu 24.04 only.
