@@ -415,6 +415,24 @@ its TTL).
 4. To undo everything at once: `SENTINEL_RESPONDER_MODE=dry_run`, and on the hosts stop the enforcer
    and run `iptables -F SENTINEL` (blocks that were queued are then never re-applied).
 
+## Security report
+
+`sentinel report` writes one self-contained HTML page (no script, nothing loaded from elsewhere) for the
+last N days: alerts per day and per rule, the ten most active sources with their country, the MITRE
+techniques seen, blocks (enforced or dry run) and agent actions, the health of each agent (silent ones are
+called out) and the events stored per source, with the count of dead-lettered lines. Open it in a browser
+and print it to PDF.
+
+```bash
+docker compose exec api sentinel report --days 7 --output /tmp/report.html   # default: 7 days
+docker compose cp api:/tmp/report.html .
+docker compose exec api sentinel report --days 30 > report.html               # or to standard output
+```
+
+Everything that comes from the data is escaped (alert texts and host names ultimately derive from log
+lines an attacker wrote). The counts are alerts, not raw attempts: a rule fires once per source per
+cooldown. `--days` is 1 to 365.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

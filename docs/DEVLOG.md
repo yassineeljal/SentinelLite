@@ -13,6 +13,32 @@ Entry template:
 
 ---
 
+## 2026-09-30 — M7 — Polish: report, README, demo, Wazuh comparison
+
+**What**
+- `sentinel report [--days N] [--output FILE]`: a printable, self-contained HTML security report (alerts per day and rule, top sources, MITRE techniques, blocks and actions, agent health with silent ones called out, events per source, dead letters). Collection (SQL) is separate from rendering (pure).
+- README rewritten to match what runs (web source, enforcer, watchdog, Discord, Blocks page, measured latencies, the engineering notes from this week). `docs/DEMO.md` (three-minute walkthrough using only what exists), `docs/COMPARISON.md` (SentinelLite vs Wazuh, design level, with what it is *not*).
+
+**Why**
+The system is finished enough to be looked at by someone else: they need to understand it in a few minutes and be able to trust what is claimed.
+
+**How verified**
+- Rendering tests need no database (page is self-contained, no script, no external URL, every data-derived string escaped with a hostile value in each field, empty period, single day and 90-day charts); integration tests on real Postgres for collection and the CLI. `ruff`, `mypy --strict` clean.
+- Claims in the docs were checked against the repository (line counts, number of ADRs, measured latencies) and one was corrected: the comparison first said "a few thousand lines" for about 12,500.
+
+**Problems & lessons**
+- A regex substitution of a repeated SQL fragment mangled the queries: rewriting the function by hand was faster than repairing the result.
+- Not verified: how the report *looks* in a browser (no browser on the server). The structure and content are tested, the rendering is not.
+- The Wazuh comparison is from public documentation and general knowledge, not from running Wazuh, and says so on its first lines.
+
+**Not done yet / limits**
+- No screenshots or video in the repository (nothing on the server can capture them).
+- The one remaining step is a decision: review the dry-run blocks and enable `enforce`.
+
+**Next**: enable `enforce` once the dry-run figures are reviewed.
+
+---
+
 ## 2026-09-29 — Reliability — Agent heartbeat and watchdog
 
 **What**
