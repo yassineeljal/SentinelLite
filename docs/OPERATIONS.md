@@ -296,6 +296,7 @@ SENTINEL_RESPONDER_ALLOWLIST=<your public address>,<the platform's address>
 COMPOSE_PROFILES=response
 docker compose up -d --build                  # the detector now announces alerts on alerts.respond
 docker compose exec api sentinel blocks       # what would be blocked, until when, and why
+docker compose exec api sentinel unblock 203.0.113.7      # lift a block now (false positive)
 docker compose exec api sentinel allowlist add 203.0.113.7 --note "my office"
 docker compose exec api sentinel allowlist list
 docker compose exec api sentinel allowlist remove 203.0.113.7
@@ -316,6 +317,13 @@ docker compose exec api sentinel allowlist remove 203.0.113.7
 
 Put your own address on the allowlist **before** anything can enforce: `who` on the VPS shows the
 address of your SSH session.
+
+**A false positive.** `sentinel unblock <address>` releases every active block of that address, queues
+an `unblock` for the agents that applied it (they drop the rule at their next poll, a few seconds
+later) and writes `unblock.manual` to the audit log. It does not stop the address from being blocked
+again by a later alert: for that, `sentinel allowlist add <address>`. If the platform is down, on the
+host: `sudo iptables -D SENTINEL -s <address> -j DROP` (the agent also lifts it by itself at the end of
+its TTL).
 
 **Going from dry run to enforce**
 

@@ -139,13 +139,37 @@ async def release_expired_blocks(
     )
     released = [ExpiredBlock(int(r[0]), str(r[1])) for r in rows]
     for block in released:
-        await session.execute(
-            text(
-                "INSERT INTO agent_actions (agent_id, block_id, kind, ip, expires_at) "
-                "SELECT agent_id, block_id, 'unblock', ip, :now FROM agent_actions "
-                "WHERE block_id = :block_id AND kind = 'block' AND status IN ('pending', 'done') "
-                "ON CONFLICT (block_id, agent_id, kind) DO NOTHING"
-            ),
-            {"now": now, "block_id": block.id},
-        )
+        await queue_unblocks(session, block.id, now)
     return released
+
+
+async def queue_unblocks(session: AsyncSession, block_id: int, now: datetime) -> None:
+    """Tell every agent that was asked to apply this block to lift it (idempotent)."""
+    await session.execute(
+        text(
+            "INSERT INTO agent_actions (agent_id, block_id, kind, ip, expires_at) "
+            "SELECT agent_id, block_id, 'unblock', ip, :now FROM agent_actions "
+            "WHERE block_id = :block_id AND kind = 'block' AND status IN ('pending', 'done') "
+            "ON CONFLICT (block_id, agent_id, kind) DO NOTHING"
+        ),
+        {"now": now, "block_id": block_id},
+    )
+
+
+async def release_blocks_for_ip(
+    session: AsyncSession, ip: str, actor: str, now: datetime
+) -> list[int]:
+    """Lift by hand every active block of `ip` (`ip` must be a canonical address): the block is
+    marked released and the agents are told to drop their rule. Returns the released block ids."""
+    rows = await session.execute(
+        text(
+            "UPDATE blocked_ips SET released_at = :now, released_by = :actor "
+            "WHERE ip = CAST(:ip AS inet) AND released_at IS NULL RETURNING id, mode"
+        ),
+        {"now": now, "actor": actor, "ip": ip},
+    )
+    released = [(int(r[0]), str(r[1])) for r in rows]
+    for block_id, mode in released:
+        if mode == "enforce":
+            await queue_unblocks(session, block_id, now)
+    return [block_id for block_id, _ in released]

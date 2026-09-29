@@ -1,5 +1,5 @@
 """Administration CLI: `sentinel agents|users create|list|revoke`, `sentinel alerts list|show`,
-`sentinel blocks`, `sentinel allowlist add|list|remove`.
+`sentinel blocks`, `sentinel unblock`, `sentinel allowlist add|list|remove`.
 
 In the compose stack:  docker compose exec api sentinel agents create --name ubuntu-01 --os linux
 `sentinel users create` is the only way to get a dashboard account: there is no self-registration.
@@ -11,6 +11,7 @@ import asyncio
 import getpass
 import re
 import sys
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -21,12 +22,15 @@ from sentinel_core.auth.passwords import WeakPassword
 from sentinel_core.auth.registry import VALID_OS, AgentNameTaken, PostgresAgentRepository
 from sentinel_core.auth.user_registry import VALID_ROLES, EmailTaken, PostgresUserRepository
 from sentinel_core.config import get_settings
+from sentinel_core.db.actions import release_blocks_for_ip
 from sentinel_core.db.alerts import AmbiguousAlertId, get_alert, list_alerts
 from sentinel_core.db.responses import (
     AllowlistEntryExists,
     add_allowlist,
+    canonical,
     list_allowlist,
     list_blocks,
+    record_audit,
     remove_allowlist,
 )
 from sentinel_core.db.session import create_engine, create_sessionmaker
@@ -73,6 +77,9 @@ def build_parser() -> argparse.ArgumentParser:
     blocks.set_defaults(command="list")
     blocks.add_argument("--limit", type=int, default=20)
 
+    unblock = sub.add_parser("unblock", help="lift the active blocks of an address, now")
+    unblock.add_argument("address")
+
     allowlist = sub.add_parser("allowlist", help="networks that are never blocked").add_subparsers(
         dest="command", required=True
     )
@@ -94,7 +101,7 @@ async def _run(args: argparse.Namespace) -> int:
     try:
         if args.group == "alerts":
             return await _alerts(args, create_sessionmaker(engine))
-        if args.group in ("blocks", "allowlist"):
+        if args.group in ("blocks", "unblock", "allowlist"):
             return await _response(args, create_sessionmaker(engine))
         if args.group == "users":
             return await _users(args, PostgresUserRepository(create_sessionmaker(engine)))
@@ -156,6 +163,8 @@ async def _users(args: argparse.Namespace, registry: PostgresUserRepository) -> 
 
 async def _response(args: argparse.Namespace, sessions: async_sessionmaker[AsyncSession]) -> int:
     async with sessions.begin() as session:
+        if args.group == "unblock":
+            return await _unblock(session, args.address)
         if args.group == "blocks":
             for b in await list_blocks(session, limit=args.limit):
                 state = "released" if b.released_at else "active"
@@ -184,6 +193,24 @@ async def _response(args: argparse.Namespace, sessions: async_sessionmaker[Async
             return 1
         print("error: not on the allowlist", file=sys.stderr)
         return 1
+
+
+async def _unblock(session: AsyncSession, address: str) -> int:
+    try:
+        ip = canonical(address)
+    except ValueError:
+        print(f"error: not an IP address: {sanitize(address)[:64]}", file=sys.stderr)
+        return 1
+    released = await release_blocks_for_ip(session, ip, "cli", datetime.now(UTC))
+    if not released:
+        print(f"{ip} has no active block", file=sys.stderr)
+        return 1
+    await record_audit(session, "cli", "unblock.manual", ip, {"block_ids": released})
+    print(
+        f"lifted {len(released)} block(s) of {ip}: the agents drop their rule at their next poll.\n"
+        f"If it attacks again it will be blocked again: `sentinel allowlist add {ip}` to stop that."
+    )
+    return 0
 
 
 async def _alerts(args: argparse.Namespace, sessions: async_sessionmaker[AsyncSession]) -> int:
