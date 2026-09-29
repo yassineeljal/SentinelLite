@@ -13,6 +13,30 @@ Entry template:
 
 ---
 
+## 2026-09-29 — Deployment — Public HTTPS deployment on a VPS behind Coolify's proxy
+
+**What**
+- `deploy/docker-compose.vps.yml`: overlay that removes the published port, joins Coolify's `coolify` network and declares Traefik labels (HTTPS with Let's Encrypt, HTTP redirect).
+- Linux agent installed on the VPS itself (systemd unit, key in a private file, `server.url` set to the public HTTPS hostname): the platform monitors the SSH attacks the server really receives.
+- `OPERATIONS.md`: new "Deploy on a VPS behind Coolify's proxy" section.
+
+**Why**
+The project was only ever run on a development Mac. A live deployment fed by real internet traffic is the demonstration that matters, and it exercises what the lab cannot: TLS termination, a hostile network, a shared Docker host.
+
+**How verified**
+- `https://<host>/healthz` and the dashboard answer over a valid certificate; 5 containers healthy.
+- End to end on the real host: agent → HTTPS → API → Redis → normalizer → Postgres (events ingested, 0 dead letters).
+- `sentinel users create` run in a real terminal; the dashboard has no self-registration.
+
+**Problems & lessons**
+- **Docker DNS collision.** The API, attached to both the project network and Coolify's, resolved `postgres` and `redis` to Coolify's own containers: `password authentication failed`, with no trace in our Postgres logs (the connection never reached it). Found by resolving the names from inside the container. Fix: unique network aliases and explicit hostnames for the API. Lesson: on a shared network, generic service names are not safe; check what a name resolves to before debugging credentials.
+- `sentinel users create` needs a TTY (`getpass`); over a non-interactive exec it fails with `termios.error`. Run it through `ssh -t`.
+- Docker publishes ports around ufw: the ports Coolify publishes stay reachable from the internet unless blocked in the `DOCKER-USER` chain (host-level, not part of this repo).
+
+**Next**: GeoIP databases on the VPS, then M5 (responder, dry-run first, with an allowlist that must contain the operator's own address).
+
+---
+
 ## 2026-09-29 — M4 (step 7) — Login throttling and optional TOTP two-factor authentication
 
 **What**
