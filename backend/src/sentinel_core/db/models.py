@@ -18,7 +18,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, INET, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, CIDR, INET, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # Deterministic constraint names keep Alembic migrations and autogenerate reproducible.
@@ -217,3 +217,56 @@ class IncidentNote(Base):
     author_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"))
     body: Mapped[str] = mapped_column(String(4000))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BlockedIp(Base):
+    """An address the responder decided to block, for a bounded time.
+
+    In `dry_run` mode it records what WOULD have been blocked and nothing touches a firewall. The
+    unique `alert_id` makes a redelivered alert a no-op (the stream is at-least-once).
+    """
+
+    __tablename__ = "blocked_ips"
+    __table_args__ = (
+        CheckConstraint("mode IN ('dry_run', 'enforce')", name="mode"),
+        Index("ix_blocked_ips_ip_expires_at", "ip", "expires_at"),
+        Index("ix_blocked_ips_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    ip: Mapped[str] = mapped_column(INET)
+    alert_id: Mapped[str] = mapped_column(String(64), unique=True)
+    rule_id: Mapped[str] = mapped_column(String(64))
+    reason: Mapped[str] = mapped_column(Text)
+    mode: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    released_by: Mapped[str | None] = mapped_column(String(128), default=None)
+
+
+class AllowlistEntry(Base):
+    """A network that is never blocked. It wins over every rule (see response/policy.py)."""
+
+    __tablename__ = "allowlist"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    cidr: Mapped[str] = mapped_column(CIDR, unique=True)
+    note: Mapped[str] = mapped_column(Text, server_default="")
+    created_by: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AuditLogEntry(Base):
+    """Who did what, when and why. Append-only: a trigger refuses UPDATE and DELETE (migration
+    0009), so the trail of automatic actions cannot be rewritten through the application."""
+
+    __tablename__ = "audit_log"
+    __table_args__ = (Index("ix_audit_log_ts", "ts"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    actor: Mapped[str] = mapped_column(String(128))
+    action: Mapped[str] = mapped_column(String(64))
+    target: Mapped[str] = mapped_column(String(128))
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))

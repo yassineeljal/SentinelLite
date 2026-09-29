@@ -5,6 +5,8 @@ from cryptography.fernet import Fernet
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from sentinel_core.response.policy import MAX_TTL_SECONDS, ResponsePolicy, parse_networks
+
 
 class Settings(BaseSettings):
     """Runtime configuration, read from environment variables prefixed with SENTINEL_."""
@@ -15,6 +17,21 @@ class Settings(BaseSettings):
     database_url: str
     redis_url: str = "redis://redis:6379/0"
     responder_mode: str = Field(default="dry_run", pattern="^(dry_run|enforce)$")
+
+    # Automated response (docs/OPERATIONS.md, "Automated response"). Off by default. When on, the
+    # detector announces every alert on `alerts.respond` and the responder worker decides, with
+    # every guardrail of response/policy.py, whether the source address would be blocked.
+    responder_enabled: bool = False
+    # Comma-separated rule ids whose alerts may block: sweeps and guessing, never successful logins.
+    responder_block_rules: str = "ssh-bruteforce,ssh-user-enumeration,ssh-invalid-user-flood"
+    responder_min_severity: int = Field(default=40, ge=0, le=100)
+    responder_ttl_seconds: int = Field(default=3600, gt=0, le=MAX_TTL_SECONDS)
+    responder_max_blocks_per_minute: int = Field(default=10, ge=1)
+    # Comma-separated CIDRs / addresses that are never blocked, on top of the database allowlist
+    # (`sentinel allowlist`) and of every non-public range: your own address, the platform's.
+    responder_allowlist: str = ""
+    responder_batch_size: int = Field(default=100, gt=0)
+    responder_claim_idle_ms: int = Field(default=60_000, ge=0)
 
     # Ingestion limits. A full batch is 500 lines of up to 8192 chars; JSON escaping can
     # multiply that, so 8 MiB leaves room while still bounding what one request may cost.
@@ -86,6 +103,19 @@ class Settings(BaseSettings):
     def _empty_key_means_off(cls, value: object) -> object:
         # docker compose passes `${SENTINEL_ABUSEIPDB_API_KEY:-}` as an empty string when unset.
         return None if isinstance(value, str) and not value.strip() else value
+
+
+def build_response_policy(settings: Settings) -> ResponsePolicy:
+    """The policy described by the settings. Raises ValueError on a malformed allowlist entry."""
+    return ResponsePolicy(
+        block_rules=frozenset(
+            rule.strip() for rule in settings.responder_block_rules.split(",") if rule.strip()
+        ),
+        min_severity=settings.responder_min_severity,
+        ttl_seconds=settings.responder_ttl_seconds,
+        max_blocks_per_minute=settings.responder_max_blocks_per_minute,
+        allowlist=parse_networks(settings.responder_allowlist.split(",")),
+    )
 
 
 @lru_cache

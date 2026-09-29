@@ -13,6 +13,37 @@ Entry template:
 
 ---
 
+## 2026-09-29 — M5 (step 1) — Responder core: dry-run decisions, allowlist, audit log
+
+**What**
+- `response/policy.py`: a pure `decide()` function. Order: eligible rule → severity floor → address present and valid → blockable (public) → allowlist → already blocked → rate cap. Each refusal returns a named `Reason`.
+- Migration `0009`: `blocked_ips` (unique `alert_id`, mandatory `expires_at`, `mode`), `allowlist` (`cidr`), `audit_log` made **append-only by a trigger**.
+- `workers/responder.py`: consumes `alerts.respond`, records "would block" plus an audit line; the detector publishes to that stream when `SENTINEL_RESPONDER_ENABLED=true`. The worker **refuses `enforce`** until the agents can execute actions.
+- CLI: `sentinel blocks`, `sentinel allowlist add|list|remove`. Compose service `responder` (profile `response`), settings, `OPERATIONS.md` section, ADR 38.
+
+**Why**
+Detection alone leaves the attacker free to keep probing. Automatic blocking is the risky half: a wrong block cuts off a legitimate user or the operator, so the guardrails come first and enforcement comes later, after the dry-run figures.
+
+**How verified**
+- 53 unit tests on the policy and startup refusals; 16 integration tests on real Redis/Postgres (full chain raw log → block, redelivery, dedup, allowlist, rate cap, hostile address, append-only audit, CLI).
+- Full suite **1085 passed, 0 skipped**; `ruff`, `mypy --strict` clean; benchmark unchanged (13 rules, 0 false alerts).
+- Integration tests run against throwaway Postgres/Redis containers, never the production stack.
+
+**Problems & lessons**
+- **Python's `is_global` is not enough.** A test found `224.0.0.1` (multicast) reported as global, so it would have been blockable; and `::ffff:10.0.0.1` must be judged as the private IPv4 it wraps. `is_blockable()` now excludes multicast, reserved, unspecified, loopback, link-local and private explicitly, after unwrapping.
+- **The allowlist must see through address forms**: an entry for `1.2.3.4` also protects `::ffff:1.2.3.4`, else the notation would bypass it.
+- **One stream, one consumer group**: consumers delete what they acknowledge, so a second consumer of `alerts.new` would starve the enricher. The responder therefore has its own stream.
+- The source address of an alert comes from a log line: it is validated before it reaches an SQL cast, and stored (audit target) only after being cut and sanitised.
+
+**Not done yet / limits**
+- No enforcement: `enforce` is refused. Next: the agent action channel (pull, no open port), then unblock on TTL expiry and a dashboard page.
+- Decisions use the rule's severity; the enrichment risk score is not used yet.
+- No notification (Discord) yet.
+
+**Next**: M5 step 2 — dry-run on the live VPS for a few days to measure false blocks, then the agent action channel.
+
+---
+
 ## 2026-09-29 — Detection — `ssh-invalid-user-flood`, a rule born from the live deployment
 
 **What**

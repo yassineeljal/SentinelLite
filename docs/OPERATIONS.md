@@ -282,6 +282,40 @@ Postgres). The overlay gives our services the unique aliases `sentinel-postgres`
 `sentinel-redis` and points only the API at them; the workers are on the private network alone and
 are unaffected. Check with `docker compose exec api getent hosts sentinel-postgres`.
 
+## Automated response (dry run)
+
+The responder decides which source addresses **would** be blocked. In this version it is dry-run
+only: it records the decision and an audit line and touches no firewall (`enforce` is refused at
+startup until the agents can execute actions).
+
+```bash
+# deploy/.env
+SENTINEL_RESPONDER_ENABLED=true
+SENTINEL_RESPONDER_ALLOWLIST=<your public address>,<the platform's address>
+COMPOSE_PROFILES=response
+docker compose up -d --build                  # the detector now announces alerts on alerts.respond
+docker compose exec api sentinel blocks       # what would be blocked, until when, and why
+docker compose exec api sentinel allowlist add 203.0.113.7 --note "my office"
+docker compose exec api sentinel allowlist list
+docker compose exec api sentinel allowlist remove 203.0.113.7
+```
+
+**Guardrails** (all in `sentinel_core/response/policy.py`, each refusal has a named reason):
+
+| Guardrail | Behaviour |
+|---|---|
+| Eligible rules | Only `ssh-bruteforce`, `ssh-user-enumeration`, `ssh-invalid-user-flood` (`SENTINEL_RESPONDER_BLOCK_RULES`). Alerts about a **successful** login or a new account never block: the source may be a legitimate user |
+| Severity floor | `SENTINEL_RESPONDER_MIN_SEVERITY` (default 40) |
+| Non-public addresses | Private, loopback, link-local, multicast, reserved and documentation ranges are never blocked, including when wrapped as `::ffff:a.b.c.d` |
+| Allowlist | `SENTINEL_RESPONDER_ALLOWLIST` plus the database allowlist (`sentinel allowlist`). It wins over everything; an IPv4-mapped IPv6 form of an allowed address is allowed too |
+| Mandatory TTL | `SENTINEL_RESPONDER_TTL_SECONDS` (default 1 h, at most 7 days). There is no permanent automatic block |
+| Rate cap | At most `SENTINEL_RESPONDER_MAX_BLOCKS_PER_MINUTE` (default 10) new blocks a minute: a rule bug must not block half the Internet |
+| Idempotent | One decision per alert (the stream is at-least-once); an already-blocked address is not blocked again |
+| Audit | Every block and every guardrail refusal (`allowlisted`, `rate_limited`, `invalid_address`) is written to `audit_log`, which a trigger makes append-only |
+
+Put your own address on the allowlist **before** anything can enforce: `who` on the VPS shows the
+address of your SSH session.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

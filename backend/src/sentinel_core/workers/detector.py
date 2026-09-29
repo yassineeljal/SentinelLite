@@ -21,7 +21,7 @@ from redis.exceptions import RedisError
 from sqlalchemy.exc import DataError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from sentinel_core.bus.alerts_stream import RedisAlertPublisher
+from sentinel_core.bus.alerts_stream import ALERTS_RESPOND_STREAM, RedisAlertPublisher
 from sentinel_core.bus.normalized_stream import NORMALIZED_STREAM
 from sentinel_core.bus.raw_stream import DATA_FIELD
 from sentinel_core.config import get_settings
@@ -56,6 +56,7 @@ class DetectorWorker(StreamConsumer):
         engine: DetectionEngine,
         *,
         alert_publisher: RedisAlertPublisher | None = None,
+        response_publisher: RedisAlertPublisher | None = None,
         consumer: str,
         stream: str = NORMALIZED_STREAM,
         group: str = GROUP,
@@ -74,6 +75,7 @@ class DetectorWorker(StreamConsumer):
         self._sessions = sessions
         self._engine = engine
         self._alert_publisher = alert_publisher
+        self._response_publisher = response_publisher
 
     async def process_batch(self, entries: list[Entry]) -> None:
         letters: list[DeadLetterRecord] = []
@@ -120,6 +122,9 @@ class DetectorWorker(StreamConsumer):
                     # leaves the batch pending: the redelivered trigger re-raises the same alert
                     # (a no-op in the table) and announces it again.
                     await self._alert_publisher.publish(alerts)
+                if self._response_publisher is not None:
+                    # Same guarantee for the responder; its decisions are idempotent per alert.
+                    await self._response_publisher.publish(alerts)
                 raised += len(alerts)
                 for alert in alerts:
                     logger.info(
@@ -227,6 +232,13 @@ async def amain() -> int:
         alert_publisher=(
             RedisAlertPublisher(redis, maxlen=settings.alerts_stream_maxlen)
             if settings.enrichment_enabled
+            else None
+        ),
+        response_publisher=(
+            RedisAlertPublisher(
+                redis, stream=ALERTS_RESPOND_STREAM, maxlen=settings.alerts_stream_maxlen
+            )
+            if settings.responder_enabled
             else None
         ),
         consumer=f"{socket.gethostname()}-{os.getpid()}",
