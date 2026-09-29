@@ -20,16 +20,6 @@ async def test_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     assert await responder.amain() == 1
 
 
-async def test_enforce_is_refused_until_the_action_channel_exists(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    monkeypatch.setenv("SENTINEL_RESPONDER_ENABLED", "true")
-    monkeypatch.setenv("SENTINEL_RESPONDER_MODE", "enforce")
-
-    assert await responder.amain() == 1
-    assert "not implemented yet" in caplog.text
-
-
 async def test_a_malformed_allowlist_entry_stops_the_worker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

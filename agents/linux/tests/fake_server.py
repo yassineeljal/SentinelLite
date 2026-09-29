@@ -32,7 +32,13 @@ class FakeServer:
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                self._serve("GET")
+
             def do_POST(self) -> None:
+                self._serve("POST")
+
+            def _serve(self, method: str) -> None:
                 length = int(self.headers.get("Content-Length", 0))
                 raw = self.rfile.read(length)
                 try:
@@ -41,13 +47,13 @@ class FakeServer:
                     body = raw
                 outer.requests.append(
                     Recorded(
-                        "POST", self.path, {k.lower(): v for k, v in self.headers.items()}, body
+                        method, self.path, {k.lower(): v for k, v in self.headers.items()}, body
                     )
                 )
                 reply = outer.replies.pop(0) if outer.replies else outer.default
                 if reply.delay:
                     time.sleep(reply.delay)
-                payload = json.dumps(reply.body).encode()
+                payload = b"" if reply.status == 204 else json.dumps(reply.body).encode()
                 self.send_response(reply.status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(payload)))

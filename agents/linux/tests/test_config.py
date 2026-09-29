@@ -159,3 +159,61 @@ def test_the_environment_is_the_real_one_by_default(
 
     assert load_config(write(tmp_path, tmp_path, body=body)).key == KEY
     assert os.environ["SENTINEL_AGENT_KEY"] == KEY
+
+
+RESPONSE = """
+[response]
+backend = "iptables"
+never_block = ["203.0.113.0/24", "198.51.100.7"]
+"""
+
+
+def test_no_response_section_means_this_agent_never_blocks(tmp_path: Path, key_file: Path) -> None:
+    assert load_config(write(tmp_path, key_file), environ={}).response is None
+
+
+def test_a_response_section_is_loaded_with_safe_defaults(tmp_path: Path, key_file: Path) -> None:
+    config = load_config(write(tmp_path, key_file, RESPONSE), environ={})
+
+    response = config.response
+    assert response is not None
+    assert response.backend == "iptables"
+    assert response.never_block == ("203.0.113.0/24", "198.51.100.7")
+    assert (response.poll_interval, response.max_blocks, response.max_ttl_seconds) == (
+        5,
+        100,
+        86400,
+    )
+
+
+@pytest.mark.parametrize(
+    ("section", "message"),
+    [
+        ("[response]\nnever_block = []\n", "response.backend"),
+        ('[response]\nbackend = "nft"\nnever_block = []\n', "response.backend"),
+        ('[response]\nbackend = "iptables"\n', "never_block: required"),
+        ('[response]\nbackend = "iptables"\nnever_block = "1.2.3.4"\n', "never_block: required"),
+        ('[response]\nbackend = "iptables"\nnever_block = ["oops"]\n', "not a network"),
+        (
+            '[response]\nbackend = "iptables"\nnever_block = []\npoll_interval = 0\n',
+            "poll_interval",
+        ),
+        ('[response]\nbackend = "iptables"\nnever_block = []\nmax_blocks = 0\n', "max_blocks"),
+        ('[response]\nbackend = "iptables"\nnever_block = []\nmax_ttl = 5\n', "unknown key"),
+    ],
+)
+def test_a_bad_response_section_is_refused(
+    tmp_path: Path, key_file: Path, section: str, message: str
+) -> None:
+    with pytest.raises(ConfigError, match=message):
+        load_config(write(tmp_path, key_file, "\n" + section), environ={})
+
+
+def test_an_empty_never_block_is_allowed_but_must_be_explicit(
+    tmp_path: Path, key_file: Path
+) -> None:
+    section = '\n[response]\nbackend = "log"\nnever_block = []\n'
+
+    config = load_config(write(tmp_path, key_file, section), environ={})
+
+    assert config.response is not None and config.response.never_block == ()

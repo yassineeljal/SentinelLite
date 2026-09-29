@@ -1,9 +1,10 @@
-"""Responder worker: `alerts.respond` (Redis) -> block decisions (Postgres).
+"""Responder worker: `alerts.respond` (Redis) -> block decisions (Postgres) -> agent actions.
 
-For every alert it applies the policy of response/policy.py and records what it decided. In this
-version it can only run in `dry_run`: a decision is stored as "would block" and logged, and no
-firewall is touched. `enforce` needs the action channel to the agents and is refused at startup
-rather than silently behaving like dry_run.
+For every alert it applies the policy of response/policy.py and records what it decided. In
+`dry_run` a decision is stored as "would block" and logged, and nothing else happens. In `enforce`
+the block is also queued as an action for the agent(s) that saw the attacker; they fetch it by
+polling and apply it to their firewall (docs/AGENT.md). Blocks whose time is up are released and
+an `unblock` is queued for the same agents.
 
 Delivery is at-least-once: the block row is unique per alert, so a redelivered alert changes
 nothing, and its audit line is written only by the delivery that inserted the row.
@@ -24,6 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sentinel_core.bus.alerts_stream import ALERTS_RESPOND_STREAM
 from sentinel_core.bus.raw_stream import DATA_FIELD
 from sentinel_core.config import build_response_policy, get_settings
+from sentinel_core.db.actions import (
+    agents_for_events,
+    block_id_for_alert,
+    enqueue_action,
+    release_expired_blocks,
+)
 from sentinel_core.db.responses import (
     canonical,
     count_blocks_since,
@@ -48,6 +55,7 @@ logger = logging.getLogger("sentinel.responder")
 GROUP = "responders"
 ACTOR = "responder"
 AUDIT_TARGET_MAX = 128
+RELEASE_INTERVAL_SECONDS = 30.0
 
 
 class ResponderWorker(StreamConsumer):
@@ -63,6 +71,7 @@ class ResponderWorker(StreamConsumer):
         group: str = GROUP,
         batch_size: int = 100,
         claim_idle_ms: int = 60_000,
+        release_interval: float = RELEASE_INTERVAL_SECONDS,
     ) -> None:
         super().__init__(
             redis,
@@ -76,6 +85,8 @@ class ResponderWorker(StreamConsumer):
         self._sessions = sessions
         self._policy = policy
         self._mode = mode
+        self._release_interval = release_interval
+        self._next_release = 0.0
 
     async def process_batch(self, entries: list[Entry]) -> None:
         alerts: list[Alert] = []
@@ -140,6 +151,7 @@ class ResponderWorker(StreamConsumer):
         )
         if not inserted:  # a redelivered alert: already decided
             return False
+        queued = await self._queue_for_agents(session, alert, address, now)
         await record_audit(
             session,
             ACTOR,
@@ -150,6 +162,7 @@ class ResponderWorker(StreamConsumer):
                 "alert_id": alert.alert_id,
                 "severity": alert.severity,
                 "ttl_seconds": self._policy.ttl_seconds,
+                "agents": queued,
             },
         )
         logger.warning(
@@ -161,6 +174,42 @@ class ResponderWorker(StreamConsumer):
             alert.alert_id[:12],
         )
         return True
+
+    async def _queue_for_agents(
+        self, session: AsyncSession, alert: Alert, address: str, now: datetime
+    ) -> int:
+        """In enforce mode, tell the agents that saw this attacker to block it. Returns how many."""
+        if self._mode != "enforce":
+            return 0
+        block_id = await block_id_for_alert(session, alert.alert_id)
+        if block_id is None:  # cannot happen: the row was just inserted in this transaction
+            return 0
+        agents = await agents_for_events(session, alert.event_ids)
+        if not agents:
+            logger.warning("no active agent saw the events of alert %s", alert.alert_id[:12])
+        expires_at = now + timedelta(seconds=self._policy.ttl_seconds)
+        for agent_id in agents:
+            await enqueue_action(
+                session,
+                kind="block",
+                block_id=block_id,
+                agent_id=agent_id,
+                ip=address,
+                expires_at=expires_at,
+            )
+        return len(agents)
+
+    async def on_tick(self) -> None:
+        if self._mode != "enforce":
+            return
+        loop_time = asyncio.get_running_loop().time()
+        if loop_time < self._next_release:
+            return
+        self._next_release = loop_time + self._release_interval
+        async with self._sessions.begin() as session:
+            for block in await release_expired_blocks(session, datetime.now(UTC), ACTOR):
+                await record_audit(session, ACTOR, "unblock", block.ip, {"block_id": block.id})
+                logger.info("released %s (block %d expired)", block.ip, block.id)
 
     async def _audit_skip(self, session: AsyncSession, alert: Alert, reason: Reason) -> None:
         # Untrusted text (the address may be malformed) is cut and sanitised before it is stored.
@@ -185,21 +234,14 @@ async def amain() -> int:
     if not settings.responder_enabled:
         logger.error("the responder is disabled (SENTINEL_RESPONDER_ENABLED=false): nothing to do")
         return 1
-    if settings.responder_mode != "dry_run":
-        logger.error(
-            "SENTINEL_RESPONDER_MODE=%s: enforcement needs the agent action channel, which is not "
-            "implemented yet. Refusing to start rather than pretend: use dry_run.",
-            settings.responder_mode,
-        )
-        return 1
     try:
         policy = build_response_policy(settings)
     except ValueError as exc:
         logger.error("invalid responder configuration: %s", exc)
         return 1
     logger.info(
-        "DRY RUN: blocking rules=%s min_severity=%d ttl=%ds cap=%d/min, "
-        "%d configured allowlist entr%s",
+        "%s: blocking rules=%s min_severity=%d ttl=%ds cap=%d/min, %d configured allowlist entr%s",
+        "ENFORCE (agents will block)" if settings.responder_mode == "enforce" else "DRY RUN",
         ",".join(sorted(policy.block_rules)),
         policy.min_severity,
         policy.ttl_seconds,

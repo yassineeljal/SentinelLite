@@ -14,6 +14,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
     Uuid,
     func,
     text,
@@ -243,6 +244,35 @@ class BlockedIp(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     released_by: Mapped[str | None] = mapped_column(String(128), default=None)
+
+
+class AgentAction(Base):
+    """A firewall action for one agent, which fetches it by polling (no inbound connection).
+
+    `expires_at` is the end of the block: the agent lifts it by itself when it passes, even if the
+    platform is unreachable, and the responder queues an explicit `unblock` as well.
+    """
+
+    __tablename__ = "agent_actions"
+    __table_args__ = (
+        CheckConstraint("kind IN ('block', 'unblock')", name="kind"),
+        CheckConstraint("status IN ('pending', 'done', 'failed')", name="status"),
+        UniqueConstraint(
+            "block_id", "agent_id", "kind", name="uq_agent_actions_block_id_agent_id_kind"
+        ),
+        Index("ix_agent_actions_agent_id_status", "agent_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    agent_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("agents.id"))
+    block_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("blocked_ips.id"))
+    kind: Mapped[str] = mapped_column(String(16))
+    ip: Mapped[str] = mapped_column(INET)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(16), server_default="pending")
+    detail: Mapped[str] = mapped_column(Text, server_default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    acked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
 
 class AllowlistEntry(Base):

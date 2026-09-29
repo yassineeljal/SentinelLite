@@ -32,7 +32,8 @@ async def engine(migrated_database: None) -> AsyncGenerator[AsyncEngine]:
         await conn.execute(
             text(
                 "TRUNCATE agents, events, events_dead_letter, alerts, users, user_sessions,"
-                " incidents, incident_notes, auth_rate_limits, blocked_ips, allowlist, audit_log"
+                " incidents, incident_notes, auth_rate_limits, blocked_ips, allowlist, audit_log,"
+                " agent_actions"
             )
         )
     yield engine

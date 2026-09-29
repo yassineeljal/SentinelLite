@@ -13,6 +13,35 @@ Entry template:
 
 ---
 
+## 2026-09-29 — M5 (step 2) — Agent action channel: enforce mode, `sentinel-agent-enforcer`, unblock on TTL
+
+**What**
+- Migration `0010`: `agent_actions` (one `block` and one `unblock` per block and agent, unique, so enqueueing twice changes nothing).
+- API: `GET /v1/agents/me/actions` and `POST /v1/agents/me/actions/{id}/ack`, authenticated by the agent key; an agent sees and answers only its own actions, once. A block already expired is never handed out.
+- Responder: `enforce` is accepted. A block is queued for the active Linux agents that reported the attacker's events (none → the block is recorded, nothing is queued, a warning says so). Every 30 s it releases the blocks whose TTL is over, audits it, and queues an `unblock`.
+- Agent: new `sentinel-agent-enforcer` (separate service, `CAP_NET_ADMIN`), `[response]` config section, `iptables`/`ip6tables` backend in a dedicated `SENTINEL` chain, `log` backend, `blocks.json` state, systemd unit. Docs: AGENT.md, OPERATIONS.md (dry run → enforce procedure), ADR 39.
+
+**Why**
+The responder could only decide. Actions are pulled so that no port is opened on the monitored hosts, and the enforcer is its own process so that the log agent never gets firewall privileges.
+
+**How verified**
+- Backend: 1093 tests pass (9 new integration tests on real Redis/Postgres: routing to the right agent only, dry-run queues nothing, revoked agent, credentials, ack once and only by the owner, release + unblock, expired block not handed out); `ruff`, `mypy --strict` clean. Agent: 163 tests (firewall rules through a recorded `iptables`, enforcer, config, CLI).
+- End to end on real processes (API + responder in `enforce` + `sentinel-agent-enforcer` with the `log` backend, Postgres and Redis): alert → `block.enforce` audit → action fetched → recorded in `blocks.json` → acknowledged `done`; TTL forced to expire → block released, `unblock` queued, applied, `blocks.json` empty, audit `unblock`.
+
+**Problems & lessons**
+- The agent does not trust the platform: it re-validates every address (private, loopback, multicast, `::ffff:` forms, `never_block`), caps active blocks and clamps the TTL, so a compromised platform can only drop traffic from a bounded number of public addresses for a bounded time. `never_block` is mandatory in the configuration (may be empty) so that enabling blocking forces the operator to think about their own address.
+- Alerts carry no `agent_id`: the target agents are found through the evidence events of the alert.
+- The models/migrations consistency test caught a unique-constraint name that the naming convention rewrites: the model now carries the full name.
+
+**Not done yet / limits**
+- **The `iptables` backend and the systemd unit have never run on a real host**: only the `log` backend was exercised end to end. First real block on the VPS is the next step.
+- No `sentinel unblock` command yet, no dashboard page, no Discord notification, risk score still unused by the policy.
+- A block queued for an agent that stays offline is applied when it returns, unless its TTL has passed.
+
+**Next**: deploy the enforcer on the VPS with `backend = "log"`, run the dry-run and `enforce` procedure of OPERATIONS.md, then switch to `iptables` with a controlled attacker address; then `sentinel unblock` and the dashboard page.
+
+---
+
 ## 2026-09-29 — M5 (step 1) — Responder core: dry-run decisions, allowlist, audit log
 
 **What**

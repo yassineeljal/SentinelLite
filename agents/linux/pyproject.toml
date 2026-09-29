@@ -9,6 +9,7 @@ dependencies = []
 
 [project.scripts]
 sentinel-agent = "sentinel_agent.cli:main"
+sentinel-agent-enforcer = "sentinel_agent.enforcer_cli:main"
 
 [build-system]
 requires = ["hatchling"]
