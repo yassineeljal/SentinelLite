@@ -1,0 +1,68 @@
+# Dashboard: authentication
+
+Who can see alerts, and how they prove who they are. Code in
+`backend/src/sentinel_core/auth/` (users, passwords, sessions) and `backend/src/sentinel_core/api/`
+(`auth.py`, `alerts.py`). The frontend (React + Vite + TS, ADR 9) and the rest of the analyst
+workflow (map, incidents, MITRE chart) are not built yet: this step is the account system and the
+first protected API endpoint they will sit behind.
+
+## Accounts
+
+**No self-registration.** The only way to get a dashboard account is `sentinel users create`
+(an admin with shell access to the platform):
+
+```bash
+docker compose exec api sentinel users create --email alice@example.com --role analyst
+# Password:            (typed, not echoed)
+# Confirm password:
+```
+
+- **Roles**: `analyst` (read alerts; more views arrive with the rest of the dashboard) and `admin`
+  (also manages users, later: rules, response). Enforced by a `CHECK` constraint in the database
+  and validated again in code — the same "typo can't silently disable a check" principle as rules
+  (`DETECTION.md`).
+- **Passwords**: hashed with Argon2id (`argon2-cffi`, library defaults — no custom cost parameters
+  to get subtly wrong), 12-1024 characters. Never logged, never returned by any endpoint.
+- `email` is a **login identifier, not a deliverable address**: syntax is checked (one `@`, a dot
+  after it, no whitespace) but reserved/internal TLDs (`.local`, `.test`, `.internal`...) are
+  accepted on purpose — a self-hosted lab has no reason to own a real domain. Stored lowercased, so
+  `Alice@Example.com` and `alice@example.com` are the same account.
+- `sentinel users list` never shows a password hash; `sentinel users revoke <id>` deactivates the
+  account **and deletes every one of its sessions** — an admin locking out a colleague, or
+  offboarding, must not leave a live session behind.
+
+## Sessions
+
+A session is a random 256-bit token, shown once at login; only its SHA-256 hash is stored
+(`user_sessions.id`), the same pattern as an agent's API key. It travels as a cookie
+(`sl_session`), not a header the frontend has to attach itself:
+
+| Attribute | Value | Why |
+|---|---|---|
+| `HttpOnly` | always | Client-side script (and any XSS) can never read the cookie |
+| `SameSite` | `Strict` | No request from another site's page ever carries it: this is the CSRF defence, on purpose instead of a separate token (ADR 34) |
+| `Secure` | on by default, `SENTINEL_SESSION_COOKIE_SECURE=false` to turn off | Real browsers (and `httpx`, and Python's `http.cookiejar`) never resend a `Secure` cookie over plain HTTP: needed for the lab, never for a network-reachable deployment |
+| Lifetime | `SENTINEL_SESSION_TTL_HOURS` (default 8h), enforced server-side | A stolen cookie stops working on its own after a work day |
+
+`POST /v1/auth/login` (email + password) sets the cookie; `POST /v1/auth/logout` deletes the
+session and clears it; `GET /v1/auth/me` returns the current user or `401`. A wrong password and an
+unknown email give the **exact same** generic `401`, in the same amount of work either way (a
+dummy hash is verified against on an unknown email — see `ingest.py`'s `_DUMMY_HASH` for the same
+reasoning with agent keys): neither timing nor the response reveals which accounts exist.
+
+## The first protected endpoint
+
+`GET /v1/alerts` (list only, no evidence yet) requires a valid session. It exists to prove the
+wiring end to end and give the frontend something to render; `sentinel alerts show` remains the way
+to see evidence with detection latency until a dedicated endpoint is built alongside the rest of
+the dashboard. Every future dashboard route is added to routers that depend on the same
+`authenticate_user`, so nothing is reachable by accident before it has been decided to be.
+
+## Not done yet
+
+- **2FA (TOTP)**: planned, not built. `role` RBAC beyond "admin can manage users" (rules, response,
+  agents) arrives with the routes it gates.
+- **No account lockout** after repeated failed logins yet: a determined attacker is slowed only by
+  Argon2's cost. A brute force against the dashboard is exactly the kind of thing `ssh-bruteforce`
+  detects in spirit; a matching `dashboard-login-bruteforce`-style rule, or a Redis-backed lockout
+  like the reputation service's circuit breaker, is a natural next step.

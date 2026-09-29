@@ -1,12 +1,13 @@
-"""Administration CLI: `sentinel agents create|list|revoke`, `sentinel alerts list|show`.
+"""Administration CLI: `sentinel agents|users create|list|revoke`, `sentinel alerts list|show`.
 
 In the compose stack:  docker compose exec api sentinel agents create --name ubuntu-01 --os linux
-Alerts are read through this CLI on purpose: there is no HTTP endpoint for them until the
-dashboard brings user authentication (an unauthenticated alerts API would leak detections).
+`sentinel users create` is the only way to get a dashboard account: there is no self-registration.
+`sentinel alerts` remains available alongside the (now authenticated) `/v1/alerts` HTTP endpoint.
 """
 
 import argparse
 import asyncio
+import getpass
 import re
 import sys
 from typing import Any
@@ -15,7 +16,9 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from sentinel_core import bench
+from sentinel_core.auth.passwords import WeakPassword
 from sentinel_core.auth.registry import VALID_OS, AgentNameTaken, PostgresAgentRepository
+from sentinel_core.auth.user_registry import VALID_ROLES, EmailTaken, PostgresUserRepository
 from sentinel_core.config import get_settings
 from sentinel_core.db.alerts import AmbiguousAlertId, get_alert, list_alerts
 from sentinel_core.db.session import create_engine, create_sessionmaker
@@ -48,6 +51,16 @@ def build_parser() -> argparse.ArgumentParser:
     show = alerts.add_parser("show", help="one alert with its evidence and detection latency")
     show.add_argument("alert_id", help="alert id or unambiguous hexadecimal prefix")
 
+    users = sub.add_parser("users", help="manage dashboard accounts").add_subparsers(
+        dest="command", required=True
+    )
+    ucreate = users.add_parser("create", help="create a dashboard account (prompts for a password)")
+    ucreate.add_argument("--email", required=True)
+    ucreate.add_argument("--role", required=True, choices=VALID_ROLES)
+    users.add_parser("list", help="list dashboard accounts (never shows password hashes)")
+    urevoke = users.add_parser("revoke", help="revoke a user and every one of their sessions")
+    urevoke.add_argument("user_id", type=UUID)
+
     bench.add_arguments(
         sub.add_parser("bench", help="replay the attack/benign scenarios: detection and FP figures")
     )
@@ -59,6 +72,8 @@ async def _run(args: argparse.Namespace) -> int:
     try:
         if args.group == "alerts":
             return await _alerts(args, create_sessionmaker(engine))
+        if args.group == "users":
+            return await _users(args, PostgresUserRepository(create_sessionmaker(engine)))
         return await _agents(args, PostgresAgentRepository(create_sessionmaker(engine)))
     finally:
         await engine.dispose()
@@ -85,6 +100,33 @@ async def _agents(args: argparse.Namespace, registry: PostgresAgentRepository) -
         status = "revoked" if agent.revoked_at else "active"
         since = f"{agent.created_at:%Y-%m-%d}"
         print(f"{agent.id}  {agent.name:<24} {agent.os:<8} {status:<8} {since}")
+    return 0
+
+
+async def _users(args: argparse.Namespace, registry: PostgresUserRepository) -> int:
+    if args.command == "create":
+        first = getpass.getpass("Password: ")
+        second = getpass.getpass("Confirm password: ")
+        if first != second:
+            print("error: the two passwords did not match", file=sys.stderr)
+            return 1
+        try:
+            created = await registry.create_user(args.email, first, args.role)
+        except (EmailTaken, ValueError, WeakPassword) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print(f"created user {created.email} ({created.id}), role {created.role}")
+        return 0
+    if args.command == "revoke":
+        if await registry.revoke_user(args.user_id):
+            print(f"revoked {args.user_id} (and every one of their sessions)")
+            return 0
+        print("error: unknown or already revoked user", file=sys.stderr)
+        return 1
+    for user in await registry.list_users():
+        status = "revoked" if user.revoked_at else "active"
+        since = f"{user.created_at:%Y-%m-%d}"
+        print(f"{user.id}  {sanitize(user.email):<32} {user.role:<8} {status:<8} {since}")
     return 0
 
 
