@@ -13,6 +13,30 @@ Entry template:
 
 ---
 
+## 2026-09-29 — Detection — `ssh-invalid-user-flood`, a rule born from the live deployment
+
+**What**
+- New rule `rules/ssh-invalid-user-flood.yaml` (T1110, threshold): ≥ 10 `Invalid user` attempts from one source in 60 s, cooldown 5 min, severity 45.
+- 10 scenarios in `datasets/ssh-invalid-user-flood/` (attacks: one name, publickey-only host with `[preauth]` disconnects, exact boundary, two sources, cooldown, IPv6; benign: 9 attempts, slow probing, two sources under the threshold; negative: the tenth attempt 61 s late).
+- `datasets/ssh-user-enumeration/benign-one-name-many-times.log` renamed `negative-…` and `datasets/ssh-bruteforce/negative-username-probes.log` updated with `# also`: both now (correctly) trip the new rule.
+- `DETECTION.md` rules table and count, regenerated `BENCHMARK.md`.
+
+**Why**
+The platform was deployed on a real VPS and its dashboard stayed empty although the server was being probed all day. The server accepts public keys only, so sshd never writes `Failed password`: `ssh-bruteforce` (failed logins) cannot fire, and `ssh-user-enumeration` deliberately ignores one name tried many times. A scanner hammering `admin` was therefore invisible. Hardening the host had silently blinded two rules.
+
+**How verified**
+- `sentinel bench --check`: **13 rules, 51/51 attack scenarios detected, 88/88 scenarios matching their exact expectations, 0 false alerts on 706 benign events**.
+- `ruff` clean, 597 unit tests pass (integration tests need Redis/Postgres and run in CI).
+
+**Problems & lessons**
+- **Threshold chosen against the existing benign data.** At 5 attempts a minute the rule fired on the existing `benign-five-names` scenario, so it would have flagged a person mistyping names. At 10 it stays silent on all benign data and still catches every scripted scan; the cost (a slow probe under 10 a minute goes unseen) is written in the rule's description.
+- Adding a rule can change the expected outcome of older scenarios (the benchmark reports this as a failure until the overlap is declared with `# also`). One of them was mis-classified as benign: with this rule it is a near miss (`negative-`).
+- Detection quality depends on the host's own hardening: a rule set validated on datasets can still miss real traffic. This was found only because the system runs on live traffic.
+
+**Next**: M5 (responder) with the allowlist, then replay the scenarios on the live instance for the README screenshots.
+
+---
+
 ## 2026-09-29 — Deployment — Public HTTPS deployment on a VPS behind Coolify's proxy
 
 **What**

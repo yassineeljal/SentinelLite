@@ -1,5 +1,6 @@
 # expect: 0
-# description: One name probed twenty times counts once.
+# also: ssh-invalid-user-flood=1
+# description: One name probed twenty times counts once for enumeration (the attempt-counting flood rule does fire).
 2026-09-24T10:00:00+00:00 prod-web-01 sshd[5252]: Invalid user oracle from 198.51.100.82 port 45249
 2026-09-24T10:00:02+00:00 prod-web-01 sshd[5255]: Invalid user oracle from 198.51.100.82 port 45252
 2026-09-24T10:00:04+00:00 prod-web-01 sshd[5258]: Invalid user oracle from 198.51.100.82 port 45255

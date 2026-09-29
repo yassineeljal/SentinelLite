@@ -1,0 +1,11 @@
+# expect: 0
+# description: Nine attempts in a minute: below the threshold.
+2026-09-29T10:00:00+00:00 prod-web-01 sshd[6100]: Invalid user ubuntu from 203.0.113.20 port 41000
+2026-09-29T10:00:05+00:00 prod-web-01 sshd[6103]: Invalid user ubuntu from 203.0.113.20 port 41003
+2026-09-29T10:00:10+00:00 prod-web-01 sshd[6106]: Invalid user ubuntu from 203.0.113.20 port 41006
+2026-09-29T10:00:15+00:00 prod-web-01 sshd[6109]: Invalid user ubuntu from 203.0.113.20 port 41009
+2026-09-29T10:00:20+00:00 prod-web-01 sshd[6112]: Invalid user ubuntu from 203.0.113.20 port 41012
+2026-09-29T10:00:25+00:00 prod-web-01 sshd[6115]: Invalid user ubuntu from 203.0.113.20 port 41015
+2026-09-29T10:00:30+00:00 prod-web-01 sshd[6118]: Invalid user ubuntu from 203.0.113.20 port 41018
+2026-09-29T10:00:35+00:00 prod-web-01 sshd[6121]: Invalid user ubuntu from 203.0.113.20 port 41021
+2026-09-29T10:00:40+00:00 prod-web-01 sshd[6124]: Invalid user ubuntu from 203.0.113.20 port 41024

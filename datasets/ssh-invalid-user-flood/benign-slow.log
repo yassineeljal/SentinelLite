@@ -1,0 +1,26 @@
+# expect: 0
+# description: One attempt every ten seconds for four minutes never reaches ten in a minute.
+2026-09-29T10:00:00+00:00 prod-web-01 sshd[6100]: Invalid user test from 203.0.113.21 port 41000
+2026-09-29T10:00:10+00:00 prod-web-01 sshd[6103]: Invalid user test from 203.0.113.21 port 41003
+2026-09-29T10:00:20+00:00 prod-web-01 sshd[6106]: Invalid user test from 203.0.113.21 port 41006
+2026-09-29T10:00:30+00:00 prod-web-01 sshd[6109]: Invalid user test from 203.0.113.21 port 41009
+2026-09-29T10:00:40+00:00 prod-web-01 sshd[6112]: Invalid user test from 203.0.113.21 port 41012
+2026-09-29T10:00:50+00:00 prod-web-01 sshd[6115]: Invalid user test from 203.0.113.21 port 41015
+2026-09-29T10:01:00+00:00 prod-web-01 sshd[6118]: Invalid user test from 203.0.113.21 port 41018
+2026-09-29T10:01:10+00:00 prod-web-01 sshd[6121]: Invalid user test from 203.0.113.21 port 41021
+2026-09-29T10:01:20+00:00 prod-web-01 sshd[6124]: Invalid user test from 203.0.113.21 port 41024
+2026-09-29T10:01:30+00:00 prod-web-01 sshd[6127]: Invalid user test from 203.0.113.21 port 41027
+2026-09-29T10:01:40+00:00 prod-web-01 sshd[6130]: Invalid user test from 203.0.113.21 port 41030
+2026-09-29T10:01:50+00:00 prod-web-01 sshd[6133]: Invalid user test from 203.0.113.21 port 41033
+2026-09-29T10:02:00+00:00 prod-web-01 sshd[6136]: Invalid user test from 203.0.113.21 port 41036
+2026-09-29T10:02:10+00:00 prod-web-01 sshd[6139]: Invalid user test from 203.0.113.21 port 41039
+2026-09-29T10:02:20+00:00 prod-web-01 sshd[6142]: Invalid user test from 203.0.113.21 port 41042
+2026-09-29T10:02:30+00:00 prod-web-01 sshd[6145]: Invalid user test from 203.0.113.21 port 41045
+2026-09-29T10:02:40+00:00 prod-web-01 sshd[6148]: Invalid user test from 203.0.113.21 port 41048
+2026-09-29T10:02:50+00:00 prod-web-01 sshd[6151]: Invalid user test from 203.0.113.21 port 41051
+2026-09-29T10:03:00+00:00 prod-web-01 sshd[6154]: Invalid user test from 203.0.113.21 port 41054
+2026-09-29T10:03:10+00:00 prod-web-01 sshd[6157]: Invalid user test from 203.0.113.21 port 41057
+2026-09-29T10:03:20+00:00 prod-web-01 sshd[6160]: Invalid user test from 203.0.113.21 port 41060
+2026-09-29T10:03:30+00:00 prod-web-01 sshd[6163]: Invalid user test from 203.0.113.21 port 41063
+2026-09-29T10:03:40+00:00 prod-web-01 sshd[6166]: Invalid user test from 203.0.113.21 port 41066
+2026-09-29T10:03:50+00:00 prod-web-01 sshd[6169]: Invalid user test from 203.0.113.21 port 41069

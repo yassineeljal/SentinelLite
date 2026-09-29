@@ -197,7 +197,8 @@ engine rather than plain `re`.
 | `sudo-auth-failures` | T1110.001, T1548.003 | threshold | ≥ 3 failed sudo **invocations** (wrong password or not in sudoers) per user and host in 10 min. Counts invocations, not guesses: sudo asks up to three times per invocation and logs one summary line |
 | `ssh-success-after-failures` | T1110, T1078 | sequence | a successful login from a source that failed ≥ 5 times in the previous 10 min: the guessing worked. Per source address (also covers spraying), severity 85, one alert per source per 10 min |
 | `ssh-off-hours-login` | T1078 | match + `when` | a successful login between 22:00 and 06:00 or on a Saturday or Sunday, **America/Toronto time** (edit `when` for your site). A lead, not an attack: severity 35, one alert per account and host per hour. Blind spot: a login during working hours is not seen by this rule |
-| `ssh-user-enumeration` | T1110.003, T1087.001 | threshold (distinct) | ≥ 6 **distinct** user names tried from one source in 60 s (`Invalid user` and `Failed password for invalid user` of one attempt count once). One name tried many times is `ssh-bruteforce`, not this |
+| `ssh-user-enumeration` | T1110.003, T1087.001 | threshold (distinct) | ≥ 6 **distinct** user names tried from one source in 60 s (`Invalid user` and `Failed password for invalid user` of one attempt count once). One name tried many times is not this: it is `ssh-bruteforce` (failed passwords) or `ssh-invalid-user-flood` (unknown names) |
+| `ssh-invalid-user-flood` | T1110 | threshold | ≥ 10 `Invalid user` attempts from one source in 60 s, whatever the names. Written from real traffic: on a host that only accepts public keys sshd never logs `Failed password`, so `ssh-bruteforce` cannot fire and a scanner hammering one name was invisible. Counts attempts where `ssh-user-enumeration` counts distinct names; a wide fast scan trips both. Severity 45, one alert per source per 5 min. Blind spot: a source under ten attempts a minute |
 | `ssh-impossible-travel` | T1078 | stateful | a login too far, too soon after the same user's previous one (GeoIP, >= 300 km, > 900 km/h). **Shipped `enabled: false`**: needs a GeoIP database at the detector, which most deployments do not have; turn it on once `deploy/fetch-geoip.sh` has run and the detector has the two `SENTINEL_GEOIP_*` variables set. Blind spots: private/lab addresses cannot be located at all (GeoIP limits, see ENRICHMENT.md); a login within 30 days of the previous one is required to compare (a dormant account's first login after a gap is never flagged) |
 | `linux-new-admin-account` | T1136.001, T1098.007 | sequence | an account is created and, within 15 min, added to `sudo`/`admin`/`wheel`/`root` on the same host: a backdoor administrator. The two single-step rules also fire; this one is the correlation. Other privileged groups (`docker`, `shadow`…) are not part of it: **blind spot** |
 
@@ -289,7 +290,7 @@ data on a running stack, either use groups (e.g. IPs) not seen live, or clear th
 
 ## Limits
 
-- Twelve rules, one source (`linux.auth`); no regex conditions.
+- Thirteen rules, one source (`linux.auth`); no regex conditions.
 - `when` reads the event's own timestamp: an attacker with root on the monitored host can forge the time written in a log line (a date in the future is replaced by the receipt time, a date in the past is not). It is a triage signal, not a boundary.
 - `sequence` has two steps only (no chains of three), and its `first` step counts events, not distinct values.
 - `stateful` has one kind (`impossible_travel`) and remembers one location per group, not a history; it inherits every GeoIP limit from `ENRICHMENT.md` (approximate, anycast/VPN addresses misplaced, private addresses invisible).

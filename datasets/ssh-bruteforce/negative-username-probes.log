@@ -1,5 +1,5 @@
 # expect: 0
-# also: ssh-user-enumeration=1
+# also: ssh-invalid-user-flood=1, ssh-user-enumeration=1
 # description: A scanner probing ten different user names with 'Invalid user' lines only: no failed login, so the brute-force rule stays silent; the enumeration rule is the one that fires.
 2026-09-24T15:20:00+00:00 ubuntu-01 sshd[837]: Invalid user probe0 from 198.51.100.77 port 45000
 2026-09-24T15:20:01+00:00 ubuntu-01 sshd[838]: Invalid user probe1 from 198.51.100.77 port 45001

@@ -1,0 +1,13 @@
+# expect: 1
+# description: IPv6 source.
+2026-09-29T10:00:00+00:00 prod-web-01 sshd[9800]: Invalid user admin from 2001:db8::7 port 46000
+2026-09-29T10:00:03+00:00 prod-web-01 sshd[9803]: Invalid user admin from 2001:db8::7 port 46003
+2026-09-29T10:00:06+00:00 prod-web-01 sshd[9806]: Invalid user admin from 2001:db8::7 port 46006
+2026-09-29T10:00:09+00:00 prod-web-01 sshd[9809]: Invalid user admin from 2001:db8::7 port 46009
+2026-09-29T10:00:12+00:00 prod-web-01 sshd[9812]: Invalid user admin from 2001:db8::7 port 46012
+2026-09-29T10:00:15+00:00 prod-web-01 sshd[9815]: Invalid user admin from 2001:db8::7 port 46015
+2026-09-29T10:00:18+00:00 prod-web-01 sshd[9818]: Invalid user admin from 2001:db8::7 port 46018
+2026-09-29T10:00:21+00:00 prod-web-01 sshd[9821]: Invalid user admin from 2001:db8::7 port 46021
+2026-09-29T10:00:24+00:00 prod-web-01 sshd[9824]: Invalid user admin from 2001:db8::7 port 46024
+2026-09-29T10:00:27+00:00 prod-web-01 sshd[9827]: Invalid user admin from 2001:db8::7 port 46027
+2026-09-29T10:00:30+00:00 prod-web-01 sshd[9830]: Invalid user admin from 2001:db8::7 port 46030

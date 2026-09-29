@@ -1,0 +1,12 @@
+# expect: 0
+# description: Nine attempts in 8 seconds, the tenth 61 seconds after the first: the first has left the window.
+2026-09-29T10:00:00+00:00 prod-web-01 sshd[7000]: Invalid user oracle from 203.0.113.22 port 42000
+2026-09-29T10:00:01+00:00 prod-web-01 sshd[7003]: Invalid user oracle from 203.0.113.22 port 42003
+2026-09-29T10:00:02+00:00 prod-web-01 sshd[7006]: Invalid user oracle from 203.0.113.22 port 42006
+2026-09-29T10:00:03+00:00 prod-web-01 sshd[7009]: Invalid user oracle from 203.0.113.22 port 42009
+2026-09-29T10:00:04+00:00 prod-web-01 sshd[7012]: Invalid user oracle from 203.0.113.22 port 42012
+2026-09-29T10:00:05+00:00 prod-web-01 sshd[7015]: Invalid user oracle from 203.0.113.22 port 42015
+2026-09-29T10:00:06+00:00 prod-web-01 sshd[7018]: Invalid user oracle from 203.0.113.22 port 42018
+2026-09-29T10:00:07+00:00 prod-web-01 sshd[7021]: Invalid user oracle from 203.0.113.22 port 42021
+2026-09-29T10:00:08+00:00 prod-web-01 sshd[7024]: Invalid user oracle from 203.0.113.22 port 42024
+2026-09-29T10:01:01+00:00 prod-web-01 sshd[7030]: Invalid user oracle from 203.0.113.22 port 42030

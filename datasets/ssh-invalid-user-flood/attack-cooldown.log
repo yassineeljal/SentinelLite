@@ -1,0 +1,26 @@
+# expect: 1
+# description: The same source keeps going two minutes later: the cooldown (five minutes) keeps it at one alert.
+2026-09-29T10:00:00+00:00 prod-web-01 sshd[9500]: Invalid user admin from 203.0.113.50 port 45000
+2026-09-29T10:00:02+00:00 prod-web-01 sshd[9503]: Invalid user admin from 203.0.113.50 port 45003
+2026-09-29T10:00:04+00:00 prod-web-01 sshd[9506]: Invalid user admin from 203.0.113.50 port 45006
+2026-09-29T10:00:06+00:00 prod-web-01 sshd[9509]: Invalid user admin from 203.0.113.50 port 45009
+2026-09-29T10:00:08+00:00 prod-web-01 sshd[9512]: Invalid user admin from 203.0.113.50 port 45012
+2026-09-29T10:00:10+00:00 prod-web-01 sshd[9515]: Invalid user admin from 203.0.113.50 port 45015
+2026-09-29T10:00:12+00:00 prod-web-01 sshd[9518]: Invalid user admin from 203.0.113.50 port 45018
+2026-09-29T10:00:14+00:00 prod-web-01 sshd[9521]: Invalid user admin from 203.0.113.50 port 45021
+2026-09-29T10:00:16+00:00 prod-web-01 sshd[9524]: Invalid user admin from 203.0.113.50 port 45024
+2026-09-29T10:00:18+00:00 prod-web-01 sshd[9527]: Invalid user admin from 203.0.113.50 port 45027
+2026-09-29T10:00:20+00:00 prod-web-01 sshd[9530]: Invalid user admin from 203.0.113.50 port 45030
+2026-09-29T10:00:22+00:00 prod-web-01 sshd[9533]: Invalid user admin from 203.0.113.50 port 45033
+2026-09-29T10:02:30+00:00 prod-web-01 sshd[9600]: Invalid user admin from 203.0.113.50 port 45100
+2026-09-29T10:02:32+00:00 prod-web-01 sshd[9603]: Invalid user admin from 203.0.113.50 port 45103
+2026-09-29T10:02:34+00:00 prod-web-01 sshd[9606]: Invalid user admin from 203.0.113.50 port 45106
+2026-09-29T10:02:36+00:00 prod-web-01 sshd[9609]: Invalid user admin from 203.0.113.50 port 45109
+2026-09-29T10:02:38+00:00 prod-web-01 sshd[9612]: Invalid user admin from 203.0.113.50 port 45112
+2026-09-29T10:02:40+00:00 prod-web-01 sshd[9615]: Invalid user admin from 203.0.113.50 port 45115
+2026-09-29T10:02:42+00:00 prod-web-01 sshd[9618]: Invalid user admin from 203.0.113.50 port 45118
+2026-09-29T10:02:44+00:00 prod-web-01 sshd[9621]: Invalid user admin from 203.0.113.50 port 45121
+2026-09-29T10:02:46+00:00 prod-web-01 sshd[9624]: Invalid user admin from 203.0.113.50 port 45124
+2026-09-29T10:02:48+00:00 prod-web-01 sshd[9627]: Invalid user admin from 203.0.113.50 port 45127
+2026-09-29T10:02:50+00:00 prod-web-01 sshd[9630]: Invalid user admin from 203.0.113.50 port 45130
+2026-09-29T10:02:52+00:00 prod-web-01 sshd[9633]: Invalid user admin from 203.0.113.50 port 45133

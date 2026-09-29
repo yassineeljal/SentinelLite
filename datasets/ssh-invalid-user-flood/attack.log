@@ -1,0 +1,14 @@
+# expect: 1
+# description: One name tried twelve times in 22 seconds.
+2026-09-29T10:00:00+00:00 prod-web-01 sshd[6100]: Invalid user admin from 203.0.113.10 port 41000
+2026-09-29T10:00:02+00:00 prod-web-01 sshd[6103]: Invalid user admin from 203.0.113.10 port 41003
+2026-09-29T10:00:04+00:00 prod-web-01 sshd[6106]: Invalid user admin from 203.0.113.10 port 41006
+2026-09-29T10:00:06+00:00 prod-web-01 sshd[6109]: Invalid user admin from 203.0.113.10 port 41009
+2026-09-29T10:00:08+00:00 prod-web-01 sshd[6112]: Invalid user admin from 203.0.113.10 port 41012
+2026-09-29T10:00:10+00:00 prod-web-01 sshd[6115]: Invalid user admin from 203.0.113.10 port 41015
+2026-09-29T10:00:12+00:00 prod-web-01 sshd[6118]: Invalid user admin from 203.0.113.10 port 41018
+2026-09-29T10:00:14+00:00 prod-web-01 sshd[6121]: Invalid user admin from 203.0.113.10 port 41021
+2026-09-29T10:00:16+00:00 prod-web-01 sshd[6124]: Invalid user admin from 203.0.113.10 port 41024
+2026-09-29T10:00:18+00:00 prod-web-01 sshd[6127]: Invalid user admin from 203.0.113.10 port 41027
+2026-09-29T10:00:20+00:00 prod-web-01 sshd[6130]: Invalid user admin from 203.0.113.10 port 41030
+2026-09-29T10:00:22+00:00 prod-web-01 sshd[6133]: Invalid user admin from 203.0.113.10 port 41033
