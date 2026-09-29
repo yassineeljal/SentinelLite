@@ -1,7 +1,9 @@
 # SentinelLite enforcer: applies the platform's block / unblock actions to the local firewall.
 # A separate service from the log agent on purpose: this one needs to change firewall rules
-# (root, limited to CAP_NET_ADMIN), the log agent must stay unprivileged.
-# Not yet validated on a real host (unit tests and an end-to-end run with the `log` backend only).
+# (CAP_NET_ADMIN), the log agent must stay unprivileged. It is NOT root: the same unprivileged user
+# holds only the network capabilities, so it can still read its private key file (a root process
+# limited to CAP_NET_ADMIN loses CAP_DAC_OVERRIDE and cannot read a 0600 file of another user).
+# Started on a real host (Ubuntu 24.04) with the `log` backend; `iptables` read access checked.
 [Unit]
 Description=SentinelLite enforcer (firewall blocks)
 After=network-online.target
@@ -9,6 +11,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=sentinel-agent
+Group=sentinel-agent
 ExecStart=/opt/sentinel-agent/bin/sentinel-agent-enforcer --config /etc/sentinel-agent/agent.toml
 Restart=on-failure
 RestartSec=5
@@ -20,9 +24,11 @@ StateDirectory=sentinel-agent
 StateDirectoryMode=0700
 UMask=0077
 
-# Hardening: root, but only the capability needed to edit the firewall, and nothing else.
+# Hardening: only the capabilities needed to edit the firewall, and nothing else.
 NoNewPrivileges=yes
 ProtectSystem=strict
+# iptables -w takes its lock in /run/xtables.lock
+ReadWritePaths=/run
 ProtectHome=yes
 PrivateTmp=yes
 ProtectKernelModules=yes
