@@ -1,4 +1,5 @@
-"""Administration CLI: `sentinel agents|users create|list|revoke`, `sentinel alerts list|show`.
+"""Administration CLI: `sentinel agents|users create|list|revoke`, `sentinel alerts list|show`,
+`sentinel blocks`, `sentinel allowlist add|list|remove`.
 
 In the compose stack:  docker compose exec api sentinel agents create --name ubuntu-01 --os linux
 `sentinel users create` is the only way to get a dashboard account: there is no self-registration.
@@ -21,6 +22,13 @@ from sentinel_core.auth.registry import VALID_OS, AgentNameTaken, PostgresAgentR
 from sentinel_core.auth.user_registry import VALID_ROLES, EmailTaken, PostgresUserRepository
 from sentinel_core.config import get_settings
 from sentinel_core.db.alerts import AmbiguousAlertId, get_alert, list_alerts
+from sentinel_core.db.responses import (
+    AllowlistEntryExists,
+    add_allowlist,
+    list_allowlist,
+    list_blocks,
+    remove_allowlist,
+)
 from sentinel_core.db.session import create_engine, create_sessionmaker
 from sentinel_core.terminal import sanitize
 
@@ -61,6 +69,20 @@ def build_parser() -> argparse.ArgumentParser:
     urevoke = users.add_parser("revoke", help="revoke a user and every one of their sessions")
     urevoke.add_argument("user_id", type=UUID)
 
+    blocks = sub.add_parser("blocks", help="addresses the responder blocked (or would block)")
+    blocks.set_defaults(command="list")
+    blocks.add_argument("--limit", type=int, default=20)
+
+    allowlist = sub.add_parser("allowlist", help="networks that are never blocked").add_subparsers(
+        dest="command", required=True
+    )
+    aadd = allowlist.add_parser("add", help="protect an address or CIDR (e.g. your own)")
+    aadd.add_argument("cidr")
+    aadd.add_argument("--note", default="")
+    allowlist.add_parser("list", help="list the protected networks")
+    aremove = allowlist.add_parser("remove", help="stop protecting an address or CIDR")
+    aremove.add_argument("cidr")
+
     bench.add_arguments(
         sub.add_parser("bench", help="replay the attack/benign scenarios: detection and FP figures")
     )
@@ -72,6 +94,8 @@ async def _run(args: argparse.Namespace) -> int:
     try:
         if args.group == "alerts":
             return await _alerts(args, create_sessionmaker(engine))
+        if args.group in ("blocks", "allowlist"):
+            return await _response(args, create_sessionmaker(engine))
         if args.group == "users":
             return await _users(args, PostgresUserRepository(create_sessionmaker(engine)))
         return await _agents(args, PostgresAgentRepository(create_sessionmaker(engine)))
@@ -128,6 +152,38 @@ async def _users(args: argparse.Namespace, registry: PostgresUserRepository) -> 
         since = f"{user.created_at:%Y-%m-%d}"
         print(f"{user.id}  {sanitize(user.email):<32} {user.role:<8} {status:<8} {since}")
     return 0
+
+
+async def _response(args: argparse.Namespace, sessions: async_sessionmaker[AsyncSession]) -> int:
+    async with sessions.begin() as session:
+        if args.group == "blocks":
+            for b in await list_blocks(session, limit=args.limit):
+                state = "released" if b.released_at else "active"
+                print(
+                    f"{b.created_at:%Y-%m-%d %H:%M:%S}  {b.mode:<8} {sanitize(b.ip):<40} "
+                    f"until {b.expires_at:%m-%d %H:%M}  {state:<8} {sanitize(b.reason)}"
+                )
+            return 0
+        if args.command == "list":
+            for e in await list_allowlist(session):
+                print(f"{sanitize(e.cidr):<40} {e.created_at:%Y-%m-%d}  {sanitize(e.note)}")
+            return 0
+        try:
+            if args.command == "add":
+                added = await add_allowlist(session, args.cidr, args.note, "cli")
+                print(f"protected {added}: it will never be blocked")
+                return 0
+            if await remove_allowlist(session, args.cidr, "cli"):
+                print(f"removed {args.cidr} from the allowlist")
+                return 0
+        except AllowlistEntryExists as exc:
+            print(f"error: {exc} is already on the allowlist", file=sys.stderr)
+            return 1
+        except ValueError as exc:
+            print(f"error: not a valid address or CIDR: {exc}", file=sys.stderr)
+            return 1
+        print("error: not on the allowlist", file=sys.stderr)
+        return 1
 
 
 async def _alerts(args: argparse.Namespace, sessions: async_sessionmaker[AsyncSession]) -> int:

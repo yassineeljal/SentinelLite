@@ -73,6 +73,8 @@ services:
       SENTINEL_RULES_DIR: /app/rules
       # When true, new alerts are announced on `alerts.new` for the enricher (profile below).
       SENTINEL_ENRICHMENT_ENABLED: ${SENTINEL_ENRICHMENT_ENABLED:-false}
+      # When true, every new alert is also announced on `alerts.respond` for the responder profile.
+      SENTINEL_RESPONDER_ENABLED: ${SENTINEL_RESPONDER_ENABLED:-false}
       # Only read if an ENABLED rule needs GeoIP (`type: stateful`, e.g. ssh-impossible-travel,
       # shipped disabled): most deployments never touch this. Same files as the enricher's.
       SENTINEL_GEOIP_CITY_DB: /geoip/dbip-city-lite.mmdb
@@ -107,6 +109,31 @@ services:
       SENTINEL_ABUSEIPDB_DAILY_LIMIT: ${SENTINEL_ABUSEIPDB_DAILY_LIMIT:-900}
     volumes:
       - ./geoip:/geoip:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Decides which source addresses would be blocked (consumes alerts.respond). DRY RUN only: it
+  # records "would block" and the audit trail, and touches no firewall. Optional: start it with
+  # `docker compose --profile response up -d` and set SENTINEL_RESPONDER_ENABLED=true in deploy/.env
+  # (the detector only announces alerts to it when that is true). It refuses to start in `enforce`.
+  responder:
+    profiles: ["response"]
+    build: *app-build
+    command: ["python", "-m", "sentinel_core.workers.responder"]
+    environment:
+      <<: *database-url
+      SENTINEL_REDIS_URL: redis://redis:6379/0
+      SENTINEL_RESPONDER_ENABLED: "true"
+      SENTINEL_RESPONDER_MODE: ${SENTINEL_RESPONDER_MODE:-dry_run}
+      SENTINEL_RESPONDER_BLOCK_RULES: ${SENTINEL_RESPONDER_BLOCK_RULES:-ssh-bruteforce,ssh-user-enumeration,ssh-invalid-user-flood}
+      SENTINEL_RESPONDER_MIN_SEVERITY: ${SENTINEL_RESPONDER_MIN_SEVERITY:-40}
+      SENTINEL_RESPONDER_TTL_SECONDS: ${SENTINEL_RESPONDER_TTL_SECONDS:-3600}
+      SENTINEL_RESPONDER_MAX_BLOCKS_PER_MINUTE: ${SENTINEL_RESPONDER_MAX_BLOCKS_PER_MINUTE:-10}
+      SENTINEL_RESPONDER_ALLOWLIST: ${SENTINEL_RESPONDER_ALLOWLIST:-}
     depends_on:
       migrate:
         condition: service_completed_successfully

@@ -6,6 +6,9 @@ from sentinel_core.bus.raw_stream import DATA_FIELD
 from sentinel_core.detection.alerts import Alert
 
 ALERTS_NEW_STREAM = "alerts.new"
+# A second copy for the responder: a stream has ONE consumer group here (consumers delete what they
+# acknowledge), so each consumer of alerts gets its own stream, fed by the detector.
+ALERTS_RESPOND_STREAM = "alerts.respond"
 # Alerts are already stored in PostgreSQL when they are published here, so the stream only carries
 # work that can be redone (enrichment). It is capped instead of exerting backpressure: if the
 # enricher is down for long, the oldest notifications are dropped and those alerts stay without
