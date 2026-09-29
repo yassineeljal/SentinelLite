@@ -1,0 +1,38 @@
+# VPS overlay: expose the API through Coolify's Traefik proxy (HTTPS via Let's Encrypt)
+# instead of publishing a host port. Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --build
+services:
+  # The API also joins Coolify's network, where Coolify's own `postgres` and `redis` containers
+  # answer to the same names. Give ours unique aliases on the private network and point the API at
+  # them, otherwise `postgres` resolves to Coolify's database.
+  postgres:
+    networks:
+      default:
+        aliases: [sentinel-postgres]
+  redis:
+    networks:
+      default:
+        aliases: [sentinel-redis]
+  api:
+    environment:
+      SENTINEL_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@sentinel-postgres:5432/${POSTGRES_DB:-sentinel}
+      SENTINEL_REDIS_URL: redis://sentinel-redis:6379/0
+    ports: !reset []
+    networks:
+      - default
+      - coolify
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=coolify
+      - traefik.http.routers.sentinel.rule=Host(`sentinel.apps.auditflow.ca`)
+      - traefik.http.routers.sentinel.entrypoints=https
+      - traefik.http.routers.sentinel.tls=true
+      - traefik.http.routers.sentinel.tls.certresolver=letsencrypt
+      - traefik.http.services.sentinel.loadbalancer.server.port=8000
+      - traefik.http.routers.sentinel-http.rule=Host(`sentinel.apps.auditflow.ca`)
+      - traefik.http.routers.sentinel-http.entrypoints=http
+      - traefik.http.routers.sentinel-http.middlewares=sentinel-https
+      - traefik.http.middlewares.sentinel-https.redirectscheme.scheme=https
+networks:
+  coolify:
+    external: true

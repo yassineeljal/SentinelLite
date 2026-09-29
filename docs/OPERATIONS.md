@@ -207,6 +207,34 @@ docker compose exec redis redis-cli get sl:rep:blocked       # set = lookups pau
 docker compose exec api sentinel alerts show <id-prefix>     # `from`, `abuse` and `risk` lines
 ```
 
+## Deploy on a VPS behind Coolify's proxy
+
+A public, HTTPS deployment on a single VPS that already runs [Coolify](https://coolify.io) (its
+Traefik proxy owns ports 80/443). `deploy/docker-compose.vps.yml` is an overlay: no host port is
+published, the API joins Coolify's `coolify` network and Traefik routes a hostname to it (Let's
+Encrypt certificate included).
+
+```bash
+cd deploy
+cp .env.example .env                       # strong POSTGRES_PASSWORD; keep SENTINEL_RESPONDER_MODE=dry_run
+# In docker-compose.vps.yml, replace the hostname in the Traefik labels with yours
+# (DNS: an A record for it pointing at the VPS).
+docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --build
+curl https://<your-hostname>/healthz
+# Interactive (needs a real terminal: `ssh -t`): the password is asked, never passed as an argument.
+docker compose -f docker-compose.yml -f docker-compose.vps.yml exec api sentinel users create --email you@example.com --role admin
+```
+
+Monitor the VPS itself by installing the Linux agent on it (see "Linux agent"), pointing
+`server.url` at the public HTTPS hostname.
+
+**Name collision with Coolify.** Coolify's own database and Redis containers answer to `postgres`
+and `redis` on the `coolify` network. The API is on both networks, so those names resolved to
+Coolify's services (`password authentication failed for user "sentinel"`, and nothing reached our
+Postgres). The overlay gives our services the unique aliases `sentinel-postgres` /
+`sentinel-redis` and points only the API at them; the workers are on the private network alone and
+are unaffected. Check with `docker compose exec api getent hosts sentinel-postgres`.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
