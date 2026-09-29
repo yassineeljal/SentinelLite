@@ -24,3 +24,16 @@ source = "linux.auth"
 # [[sources]]
 # path = "/var/log/nginx/access.log"
 # source = "nginx.access"
+
+# --- Optional: let the platform block attackers on this host's firewall --------------------------
+# Read only by `sentinel-agent-enforcer` (a separate, privileged service: see docs/AGENT.md). Without
+# this section the agent never touches the firewall.
+# [response]
+# backend = "iptables"            # "iptables" (rules in a SENTINEL chain) or "log" (applies nothing)
+# # MANDATORY (may be empty): addresses that can never be blocked, whatever the platform says.
+# # Put here the address you SSH from, your monitoring, your office.
+# never_block = ["203.0.113.7", "198.51.100.0/24"]
+# poll_interval = 5               # seconds between two checks for actions (1..300)
+# max_blocks = 100                # refuse new blocks beyond this many active ones
+# max_ttl_seconds = 86400         # no block outlives this, even if the platform asks for more
+# state_file = "/var/lib/sentinel-agent/blocks.json"

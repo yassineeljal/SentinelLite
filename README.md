@@ -18,7 +18,7 @@ scenarios, and CI fails if the detection benchmark drifts.
 | Attack scenarios detected | **51 / 51** |
 | Scenarios matching their exact expected alert count | **88 / 88** |
 | False alerts on 706 replayed benign events | **0** |
-| Automated tests | **1 085** (real Redis and PostgreSQL in CI), `mypy --strict`, `ruff` |
+| Automated tests | **1 093** (real Redis and PostgreSQL in CI), `mypy --strict`, `ruff` |
 | Attack → alert latency (real `hydra` → `sshd` → agent → alert) | **7.4 s** |
 
 Full per-rule figures: [`docs/BENCHMARK.md`](docs/BENCHMARK.md) (generated, checked by CI).
@@ -119,7 +119,7 @@ Bugs and design points that came from running it, all recorded in the devlog:
 ## Status
 
 Milestones M0–M4 (foundations, vertical slice, detection, enrichment, dashboard) are done; **M5 (response)** is
-in progress: decisions and guardrails are in, enforcement through the agents is next; then a Windows/Sysmon
+in progress: decisions, guardrails and the agent action channel (firewall enforcer) are in, a live dry-run then a first real block on the VPS are next; then a Windows/Sysmon
 agent (M6) and polish (M7). It runs on a public VPS behind an HTTPS reverse proxy, monitoring the SSH traffic
 that server actually receives.
 

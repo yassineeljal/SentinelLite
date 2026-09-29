@@ -113,13 +113,46 @@ never logged and is hidden from `repr()`.
   warning: log lines and the key travel unencrypted. Use `https://` anywhere else.
 - **Log content leaves the host.** Whatever is in the followed files is sent: choose the sources.
 
+## Blocking attackers (the enforcer)
+
+When the responder runs in `enforce` mode ([`OPERATIONS.md`](OPERATIONS.md)), a block becomes an
+**action** queued for the agent(s) that reported the attacker's events. A second program,
+`sentinel-agent-enforcer`, **pulls** its actions (`GET /v1/agents/me/actions`, same API key), applies
+them to the firewall and reports the outcome (`POST /v1/agents/me/actions/{id}/ack`). It always
+initiates the connection: no port is opened on the host.
+
+It is a **separate service** (`deploy/sentinel-agent-enforcer.service`) because it needs to edit
+firewall rules while the log agent must stay unprivileged. It reads the same `agent.toml`, and does
+nothing unless a `[response]` section exists.
+
+The platform is *asked*, not obeyed. Whatever the action says, the enforcer:
+
+- refuses an address that is not an ordinary internet host (private, loopback, link-local, multicast,
+  reserved, documentation ranges, IPv4-mapped forms of those) or that is in `never_block`
+  (mandatory in the configuration, may be empty: enabling blocking forces you to decide what must
+  never be cut off, e.g. the address you SSH from);
+- caps the number of active blocks (`max_blocks`) and clamps every block to `max_ttl_seconds`;
+- lifts each block **by itself** when its end time passes, even if the platform is unreachable
+  (the platform also queues an explicit `unblock`);
+- persists its blocks (`blocks.json`, atomic write) and re-applies the unexpired ones after a reboot;
+- is idempotent: a redelivered action, or an acknowledgment lost on the network, changes nothing.
+
+With `backend = "iptables"` the rules live in a dedicated `SENTINEL` chain that `INPUT` jumps to first
+(`iptables -L SENTINEL -n` to audit, `iptables -F SENTINEL` to remove everything; `ip6tables` for
+IPv6). `backend = "log"` applies nothing and logs `WOULD BLOCK`, to try the channel before granting
+privileges. A compromised platform can therefore, at worst, make an agent drop traffic from
+`max_blocks` public addresses for `max_ttl_seconds`, never from `never_block` nor from private ranges.
+
+Exit codes: 0 normal stop, 1 configuration error or no `[response]` section, 2 key refused.
+
 ## Limits (v0.1)
 
 - Linux sources only: `linux.auth` (parsed by the platform) and `nginx.access` (accepted by the API
   but **not normalized yet**: its lines are dead-lettered until that normalizer exists).
 - Polling (0.5 s), no inotify. Compressed rotated files are not followed. `copytruncate` can lose
   the few lines written between the last read and the truncation.
-- No response channel yet: the agent does not fetch or execute actions (blocking an IP is planned
-  for M5, by *pull*, so that no port is opened on the host).
+- The enforcer exists but is validated with unit tests and an end-to-end run with the `log` backend
+  only; the `iptables` backend and its systemd unit have not yet run on a real host. `nftables` and
+  `ufw` are not supported (rules go through `iptables`, which is `iptables-nft` on Ubuntu 24.04).
 - No TLS client certificates, no proxy support.
 - The systemd unit is validated on Ubuntu 24.04 only.

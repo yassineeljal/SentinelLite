@@ -1,0 +1,39 @@
+# SentinelLite enforcer: applies the platform's block / unblock actions to the local firewall.
+# A separate service from the log agent on purpose: this one needs to change firewall rules
+# (root, limited to CAP_NET_ADMIN), the log agent must stay unprivileged.
+# Not yet validated on a real host (unit tests and an end-to-end run with the `log` backend only).
+[Unit]
+Description=SentinelLite enforcer (firewall blocks)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/sentinel-agent/bin/sentinel-agent-enforcer --config /etc/sentinel-agent/agent.toml
+Restart=on-failure
+RestartSec=5
+# Exit codes 1 (bad configuration, no [response] section) and 2 (key refused) need a human.
+RestartPreventExitStatus=1 2
+
+# Applied blocks (so that they are re-applied after a reboot): /var/lib/sentinel-agent
+StateDirectory=sentinel-agent
+StateDirectoryMode=0700
+UMask=0077
+
+# Hardening: root, but only the capability needed to edit the firewall, and nothing else.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+SystemCallFilter=@system-service
+
+[Install]
+WantedBy=multi-user.target

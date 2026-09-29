@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from sentinel_agent.firewall import parse_networks
+
 # Sources a Linux agent can ship (the server knows more, e.g. the Windows ones).
 LINUX_SOURCES = ("linux.auth", "nginx.access")
 # Limits of the ingestion API (docs/INGESTION_API.md): 500 lines per request, 8 MiB per body.
@@ -37,6 +39,18 @@ class Source:
 
 
 @dataclass(frozen=True)
+class ResponseConfig:
+    """Settings of the enforcer (`sentinel-agent-enforcer`); absent = this agent never blocks."""
+
+    backend: str
+    never_block: tuple[str, ...]
+    poll_interval: float = 5.0
+    state_file: Path = Path("/var/lib/sentinel-agent/blocks.json")
+    max_blocks: int = 100
+    max_ttl_seconds: int = 86_400
+
+
+@dataclass(frozen=True)
 class Config:
     server_url: str
     key: str = ""
@@ -47,6 +61,7 @@ class Config:
     start_at: str = "end"
     poll_interval: float = 0.5
     ca_file: Path | None = None
+    response: ResponseConfig | None = None
 
     def __repr__(self) -> str:  # never let the key reach a log or a traceback
         return f"Config(server_url={self.server_url!r}, sources={len(self.sources)}, key=<hidden>)"
@@ -121,6 +136,44 @@ def _sources(raw: object) -> tuple[Source, ...]:
     return tuple(sources)
 
 
+BACKENDS = ("iptables", "log")
+
+
+def _response(raw: object) -> ResponseConfig | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ConfigError("[response] must be a table")
+    _only_keys(
+        "response",
+        raw,
+        {"backend", "never_block", "poll_interval", "state_file", "max_blocks", "max_ttl_seconds"},
+    )
+    backend = raw.get("backend")
+    if backend not in BACKENDS:
+        raise ConfigError(f"response.backend: must be one of {', '.join(BACKENDS)}")
+    never = raw.get("never_block")
+    if not isinstance(never, list) or not all(isinstance(item, str) for item in never):
+        # Mandatory on purpose (an empty list is allowed): whoever enables blocking must decide
+        # which addresses (the operator's, monitoring, the office) can never be cut off.
+        raise ConfigError("response.never_block: required, a list of addresses or networks")
+    try:
+        parse_networks(never)
+    except ValueError as exc:
+        raise ConfigError(f"response.never_block: {exc}") from exc
+    poll = raw.get("poll_interval", 5)
+    if isinstance(poll, bool) or not isinstance(poll, int | float) or not 1 <= poll <= 300:
+        raise ConfigError("response.poll_interval: must be a number of seconds in [1, 300]")
+    return ResponseConfig(
+        backend=backend,
+        never_block=tuple(never),
+        poll_interval=float(poll),
+        state_file=Path(raw.get("state_file", "/var/lib/sentinel-agent/blocks.json")),
+        max_blocks=_int_in(raw, "max_blocks", 100, 1, 10_000),
+        max_ttl_seconds=_int_in(raw, "max_ttl_seconds", 86_400, 60, 30 * 86_400),
+    )
+
+
 def load_config(path: Path, environ: Mapping[str, str] | None = None) -> Config:
     environ = os.environ if environ is None else environ
     try:
@@ -130,7 +183,7 @@ def load_config(path: Path, environ: Mapping[str, str] | None = None) -> Config:
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"{path}: invalid TOML: {exc}") from exc
 
-    _only_keys("config", data, {"server", "agent", "sources"})
+    _only_keys("config", data, {"server", "agent", "sources", "response"})
     server = data.get("server", {})
     agent = data.get("agent", {})
     _only_keys("server", server, {"url", "key_file", "ca_file"})
@@ -155,4 +208,5 @@ def load_config(path: Path, environ: Mapping[str, str] | None = None) -> Config:
         start_at=start_at,
         poll_interval=float(poll),
         ca_file=Path(server["ca_file"]) if "ca_file" in server else None,
+        response=_response(data.get("response")),
     )

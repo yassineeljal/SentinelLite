@@ -282,11 +282,12 @@ Postgres). The overlay gives our services the unique aliases `sentinel-postgres`
 `sentinel-redis` and points only the API at them; the workers are on the private network alone and
 are unaffected. Check with `docker compose exec api getent hosts sentinel-postgres`.
 
-## Automated response (dry run)
+## Automated response (dry run, then enforce)
 
-The responder decides which source addresses **would** be blocked. In this version it is dry-run
-only: it records the decision and an audit line and touches no firewall (`enforce` is refused at
-startup until the agents can execute actions).
+The responder decides which source addresses to block. In `dry_run` (the default) it only records
+the decision and an audit line and touches nothing. In `enforce` it also queues a block action for
+the agent(s) that saw the attacker; their enforcer applies it to the firewall (docs/AGENT.md) and the
+block is lifted, and audited, when its TTL ends. Measure the dry-run first (`sentinel blocks`).
 
 ```bash
 # deploy/.env
@@ -315,6 +316,17 @@ docker compose exec api sentinel allowlist remove 203.0.113.7
 
 Put your own address on the allowlist **before** anything can enforce: `who` on the VPS shows the
 address of your SSH session.
+
+**Going from dry run to enforce**
+
+1. Watch `sentinel blocks` for a few days: is every "would block" a real attacker?
+2. On each monitored host, add a `[response]` section to `agent.toml` (`never_block` = the addresses
+   you SSH from), start with `backend = "log"`, and enable the `sentinel-agent-enforcer` service.
+3. Set `SENTINEL_RESPONDER_MODE=enforce` and restart the responder. Provoke a block from an address
+   you control (not allowlisted), check `iptables -L SENTINEL -n` on the agent, and that it
+   disappears when the TTL ends. Only then switch the agent to `backend = "iptables"`.
+4. To undo everything at once: `SENTINEL_RESPONDER_MODE=dry_run`, and on the hosts stop the enforcer
+   and run `iptables -F SENTINEL` (blocks that were queued are then never re-applied).
 
 ## Troubleshooting
 
