@@ -14,11 +14,11 @@ scenarios, and CI fails if the detection benchmark drifts.
 
 | | |
 |---|---|
-| Detection rules | **13** (ATT&CK-mapped: T1110, T1078, T1136, T1098, T1548, T1087) |
-| Attack scenarios detected | **51 / 51** |
-| Scenarios matching their exact expected alert count | **88 / 88** |
-| False alerts on 706 replayed benign events | **0** |
-| Automated tests | **1 151** (real Redis and PostgreSQL in CI), `mypy --strict`, `ruff` |
+| Detection rules | **15** (ATT&CK-mapped: T1110, T1078, T1136, T1098, T1548, T1087, T1595) |
+| Attack scenarios detected | **61 / 61** |
+| Scenarios matching their exact expected alert count | **108 / 108** |
+| False alerts on 933 replayed benign events | **0** |
+| Automated tests | **1 274** (real Redis and PostgreSQL in CI), `mypy --strict`, `ruff` |
 | Attack → alert latency (real `hydra` → `sshd` → agent → alert) | **7.4 s** |
 
 Full per-rule figures: [`docs/BENCHMARK.md`](docs/BENCHMARK.md) (generated, checked by CI).
@@ -121,8 +121,8 @@ Bugs and design points that came from running it, all recorded in the devlog:
 Milestones M0–M4 (foundations, vertical slice, detection, enrichment, dashboard) are done; **M5 (response)**
 is nearly done: guardrailed decisions, the agent action channel with a firewall enforcer (a real block was
 applied and lifted on the VPS), `sentinel unblock`, Discord notifications and a Blocks page in the dashboard
-are in. Left: review the dry-run figures, then switch the responder to `enforce`. Next come web detection
-(`nginx.access`, M6) and polish (M7). There is no Windows agent: the platform monitors Linux. It runs on a
+are in. Left: review the dry-run figures, then switch the responder to `enforce`. Web detection (M6: the proxy's
+access log, two rules) is written; polish (M7) comes next. There is no Windows agent: the platform monitors Linux. It runs on a
 public VPS behind an HTTPS reverse proxy, monitoring the SSH traffic that server actually receives.
 
 Out of scope for v1: high availability, multi-tenancy, ML anomaly detection, EDR.

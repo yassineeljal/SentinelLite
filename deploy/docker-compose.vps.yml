@@ -33,6 +33,16 @@ services:
       - traefik.http.routers.sentinel-http.entrypoints=http
       - traefik.http.routers.sentinel-http.middlewares=sentinel-https
       - traefik.http.middlewares.sentinel-https.redirectscheme.scheme=https
+      # The agents talk to the API through this proxy: their own requests (log batches, action
+      # polls) must not reach the access log, or the agent would ship a line for every batch it
+      # ships, forever. A dedicated router for exactly those paths switches the access log off.
+      - "traefik.http.routers.sentinel-agents.rule=Host(`sentinel.apps.auditflow.ca`) && (PathPrefix(`/v1/ingest`) || PathPrefix(`/v1/agents/me`))"
+      - traefik.http.routers.sentinel-agents.entrypoints=https
+      - traefik.http.routers.sentinel-agents.tls=true
+      - traefik.http.routers.sentinel-agents.tls.certresolver=letsencrypt
+      - traefik.http.routers.sentinel-agents.priority=1000
+      - traefik.http.routers.sentinel-agents.service=sentinel
+      - traefik.http.routers.sentinel-agents.observability.accesslogs=false
 networks:
   coolify:
     external: true

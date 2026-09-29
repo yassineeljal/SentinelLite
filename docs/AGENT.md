@@ -147,8 +147,8 @@ Exit codes: 0 normal stop, 1 configuration error or no `[response]` section, 2 k
 
 ## Limits (v0.1)
 
-- Linux sources only: `linux.auth` (parsed by the platform) and `nginx.access` (accepted by the API
-  but **not normalized yet**: its lines are dead-lettered until that normalizer exists).
+- Sources: `linux.auth` and `traefik.access` (Traefik's JSON access log) are parsed by the platform;
+  `nginx.access` is accepted by the API but **not normalized**: its lines are dead-lettered.
 - Polling (0.5 s), no inotify. Compressed rotated files are not followed. `copytruncate` can lose
   the few lines written between the last read and the truncation.
 - The enforcer was validated on the Ubuntu 24.04 VPS (2026-09-29): a real block through `iptables`

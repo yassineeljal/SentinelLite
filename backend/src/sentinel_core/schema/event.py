@@ -11,6 +11,7 @@ from pydantic.networks import IPvAnyAddress
 class Source(StrEnum):
     LINUX_AUTH = "linux.auth"
     NGINX_ACCESS = "nginx.access"
+    TRAEFIK_ACCESS = "traefik.access"
     WINDOWS_SECURITY = "windows.security"
     WINDOWS_SYSMON = "windows.sysmon"
 
@@ -32,6 +33,7 @@ class Action(StrEnum):
     SUDO_FAILED = "sudo_failed"
     ACCOUNT_CREATED = "account_created"
     GROUP_MEMBER_ADDED = "group_member_added"
+    HTTP_REQUEST = "http_request"
 
 
 class Outcome(StrEnum):

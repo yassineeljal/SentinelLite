@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 from sentinel_agent.firewall import parse_networks
 
 # Sources a Linux agent can ship (the server knows more, e.g. the Windows ones).
-LINUX_SOURCES = ("linux.auth", "nginx.access")
+LINUX_SOURCES = ("linux.auth", "nginx.access", "traefik.access")
 # Limits of the ingestion API (docs/INGESTION_API.md): 500 lines per request, 8 MiB per body.
 # JSON escaping can multiply the size of control characters by 6, hence the byte ceiling.
 MAX_BATCH_LINES = 500

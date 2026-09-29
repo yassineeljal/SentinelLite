@@ -1,0 +1,22 @@
+id: web-login-bruteforce
+title: Password guessing against the dashboard login
+description: >
+  Ten or more failed requests to the dashboard's login endpoint (`POST /v1/auth/login`, answered
+  401, or 429 once the API's own throttle kicks in) from the same source IP within 60 seconds.
+  The API limits attempts per account and per address, but a slow, distributed or throttled attack
+  still shows up here. A successful login is never counted. One alert per source per five minutes.
+  Blind spot: fewer than ten failures a minute from one address, or many addresses each staying
+  below that.
+mitre: [T1110]
+severity: 55
+type: threshold
+match:
+  source: traefik.access
+  action: http_request
+  outcome: failure
+  extra.path_class: login
+group_by: [src_ip]
+threshold:
+  count: 10
+  window: 60s
+cooldown: 300s
