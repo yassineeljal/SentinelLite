@@ -27,6 +27,7 @@ The VPS is a public host: what reaches it is scans (`/.env`, `wp-login.php`) and
 **How verified**
 - Benchmark: 15 rules, 61/61 attacks, 108/108 exact alert counts, 0 false alerts on 933 benign events. 1274 backend tests (in-memory and real Redis/Postgres pipeline for every scenario), 164 agent tests; `ruff`, `mypy --strict` clean.
 - The normalizer was run against a real line of the production log before anything else.
+- **Live on the VPS** (after deploying server then agent): six probe paths and twelve bad logins sent to the public URL produced `web-path-probing` (4 events, 0.09 s after the event) and `web-login-bruteforce` (10 events, 0.32 s) in the alerts table; the events table shows 6 sensitive (all answered 200 by the app), 10 login 401 and 2 login 429 (the API's own throttle); no agent request in the ingested events.
 
 **Problems & lessons**
 - **A feedback loop, caught before it started.** The agents reach the API through the proxy: with the access log on, every batch shipped would have created a line to ship, forever. Found by reading the first real log lines (my own agent polls were in them); fixed with the log-off router, checked live (0 agent lines in the log while the API served 8 polls in 40 s).
@@ -39,6 +40,7 @@ The VPS is a public host: what reaches it is scans (`/.env`, `wp-login.php`) and
 - Neither web rule is in the responder's block list: decide after seeing real alerts. A distributed scan (many addresses, few paths each) is not caught.
 - Nothing yet alerts when an agent stops sending (no heartbeat).
 - Coolify may rewrite the proxy's compose file and drop the access log lines (OPERATIONS.md says how to put them back).
+- While the API container is being recreated its dedicated router does not exist for a few seconds: the agents' requests then fall on the default router and are logged (503). Bounded (it stops when the API is back) and harmless, but a redeploy leaves a handful of such lines.
 
 **Next**: deploy, watch the first real alerts, an agent heartbeat / silence alert; then `enforce`.
 
