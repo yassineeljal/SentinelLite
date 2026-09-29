@@ -6,6 +6,7 @@ show` prints, so the CLI and the dashboard are two views of the same data, not t
 import re
 from datetime import datetime
 from typing import Annotated, Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -78,6 +79,7 @@ class AlertDetailResponse(BaseModel):
     detection_latency_ms: float | None
     enrichment: dict[str, Any] | None
     risk: dict[str, Any] | None
+    incident_id: UUID | None
 
 
 def _detail_response(detail: AlertDetail) -> AlertDetailResponse:
@@ -100,6 +102,7 @@ def _detail_response(detail: AlertDetail) -> AlertDetailResponse:
         detection_latency_ms=latency.total_seconds() * 1000 if latency is not None else None,
         enrichment=detail.enrichment,
         risk=detail.risk,
+        incident_id=detail.incident_id,
     )
 
 

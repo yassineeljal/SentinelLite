@@ -13,6 +13,121 @@ Entry template:
 
 ---
 
+## 2026-09-29 — M4 (step 7) — Login throttling and optional TOTP two-factor authentication
+
+**What**
+- Migration `0008` adds encrypted active/pending TOTP secrets, enrollment expiry and session
+  binding, a last-used counter, hashed recovery codes, and persistent authentication attempt counters.
+- Login accepts an optional authenticator/recovery code. Enrolled accounts require both password
+  and unused factor before receiving a session. Unknown accounts, wrong passwords and missing or
+  invalid factors share a generic 401. Argon2 work is off the event loop and capped at two concurrent
+  verifications per API process.
+- Default budgets: 10 attempts per normalized login identifier, 50 per source address, in fixed
+  300-second windows. MFA management has its own per-user budget and shares the source budget.
+  Successful attempts count; blocked attempts do not extend expiry. Atomic Postgres counters survive
+  restarts and work across processes. A failed counter store refuses authentication (503).
+- `/v1/auth/2fa` and `/security`: password-confirmed enrollment, a QR generated locally in the
+  browser or manual setup key, confirmation, ten one-use recovery codes, regeneration and disabling.
+  Enrollment expires in ten minutes and belongs to its initiating session. Every factor change
+  reauthenticates, invalidates old sessions and issues a fresh cookie to the current browser.
+- PyOTP implements standard six-digit, 30-second TOTP with one step of clock tolerance. User row
+  locks make factor consumption and session issuance atomic with revocation/enrollment. Secrets are
+  Fernet-encrypted and bound to user IDs; recovery codes contain 128 random bits and retain only
+  SHA-256 hashes. Missing/wrong encryption keys never permit password-only access to enrolled users.
+- Stable `SENTINEL_MFA_ENCRYPTION_KEY` and limit settings are wired into compose and documented.
+  The Docker uvicorn command disables proxy-header trust explicitly; forwarded-header deployment
+  requirements are documented. Successful auth/settings responses carry `Cache-Control: no-store`.
+
+**How verified**
+- **986 backend tests pass** with real isolated Postgres and Redis (40 added): RFC 6238 vectors,
+  clock window/replay, ciphertext/account binding, independent recovery codes, complete factor
+  lifecycle, pending setup expiry/session binding, mandatory password/factor checks, secret-free
+  status responses, unavailable key handling, concurrent consumption, concurrent revocation/login
+  and enrollment/login, atomic shared budgets, normalized identifiers, spraying, expiry and 503
+  on a failed limiter. Migration upgrade/downgrade/upgrade and `alembic check` pass.
+- **65 frontend tests pass** (10 added). Local QR/fallback, setup confirmation, one-time recovery
+  display, invalid code, unavailable setup, regeneration, disabling, throttling feedback, retry and
+  login code submission covered. Ruff, formatting, strict mypy, frontend typecheck/lint/build and
+  detection benchmark check pass. Compose validates and the Docker image builds successfully.
+- **Real Chromium against the built Docker image**: setup QR and confirmation, password-only and
+  reused TOTP refused, next-step TOTP login, recovery login, replacement codes, old codes refused,
+  disabling, restored password login and actual 429/Retry-After. Desktop/mobile screenshots inspected;
+  no horizontal overflow, JavaScript errors or external requests. Temporary services and test key
+  removed afterward. Browser verification remains one-off, not CI E2E.
+
+**Problems & lessons**
+- An initial ciphertext test appended text after base64 padding, which need not change the decoded
+  token. Replaced it with an actual token mutation. Another test mixed a domainless cookie with
+  httpx's `test.local` cookie, producing two cookies instead of simulating replacement; corrected
+  the test's cookie domain. Neither required loosening production verification.
+- QRCode's overloaded callback/Promise typings made a test mock fail strict TypeScript despite
+  passing at runtime; an explicit Promise-returning mock resolved the type mismatch.
+- GitGuardian's hosted GitHub App check flagged the TOTP test suite's RFC 6238 Appendix B test
+  vector as a high-entropy secret — a real false positive (it is the RFC's own published
+  conformance seed, not a credential). The App scans server-side and does not read a repo-level
+  ignore config, so a `secrets` CI job now runs `ggshield` directly against the PR diff, with the
+  vector listed and explained in `.gitguardian.yaml` (`OPERATIONS.md`); the hosted App check
+  remains a separate, non-blocking integration (`main` has no required status checks).
+
+**Not done / limits**: enrollment is optional; it needs a configured deployment encryption key.
+No automatic key rotation, WebAuthn, email/SMS fallback, password-reset or admin factor-reset route,
+full authentication audit or CI browser E2E. Losing both authenticator and recovery codes requires
+revoking the account and provisioning a replacement through the existing operator CLI.
+
+**Next**: broader admin RBAC as management routes arrive, then automated browser E2E in CI.
+
+---
+
+## 2026-09-29 — M4 (step 6) — Incident triage
+
+**What**
+- Completed the existing uncommitted incident scaffold: migration `0007`, models, repository and
+  integration tests. Added indexed alert-to-incident links and immutable notes. Incident risk is
+  the highest linked alert risk, computed on read; closing records a timestamp and reopening clears it.
+- Added authenticated `/v1/incidents` routes for listing, creation, detail, status, self-assignment,
+  unassignment, notes and alert linking/unlinking. Both analyst and admin accounts can triage shared
+  cases; note authors and claims come from the session. Bounded, nonblank inputs and full alert IDs
+  are validated; PostgreSQL-incompatible NUL characters are rejected.
+- Added incident list/detail pages, status filtering, creation from an alert, notes, assignment and
+  status controls, and alert links in both directions. Recent-alert suggestions also accept older
+  full IDs. Failed saves preserve drafts; a failed refresh after a successful save is reported as
+  such so the user does not inadvertently resubmit a note. Mobile layout and navigation wrap.
+- Updated dashboard docs, frontend README and ADR 36; removed stale claims that the map and MITRE
+  view were still missing.
+
+**Why**
+The dashboard could display detections but could not track their investigation. Incidents provide
+one shared case for related alerts, with a responsible analyst, notes and an explicit status.
+
+**How verified**
+- **946 backend tests pass** against isolated real Postgres and Redis (45 incident tests). This
+  includes every route's authentication, both user roles, input bounds, unknown incidents,
+  all-or-nothing linking, concurrent competing links, and risk recomputation after unlinking.
+  Migration upgrade/downgrade/upgrade passes; `alembic check` finds no model drift. Ruff,
+  formatting, strict mypy and the detection benchmark check pass.
+- **55 frontend tests pass** (12 new), with typecheck, lint, formatting and production build clean.
+- **Real Chromium, real API, built frontend** on a temporary local server and isolated test database:
+  login, create from an alert, claim, investigate, add a multiline note, link another alert, close,
+  hard refresh, reopen, unassign, unlink, filter, logout and verify a direct incident URL requires
+  login. Desktop and 390px mobile screenshots inspected; no horizontal overflow or JavaScript errors.
+  This is a one-off browser check, not a new CI E2E dependency.
+
+**Problems & lessons**
+- The unfinished repository committed inside initial alert linking. Creation now commits once after
+  validation, so a failed batch leaves no partial incident. Unknown or already-owned alerts return
+  409; ordered row locks prevent two analysts from moving the same alert by racing. Moving an alert
+  requires unlinking it first. A stale unlink is scoped to the named incident only.
+- Fixed unfinished tests that expected a detail/assignee ID from a function returning a summary.
+  Repeating a close now preserves the first close timestamp instead of rewriting it.
+
+**Not done / limits**: no automatic grouping, arbitrary-user assignment, title editing, incident
+deletion, pagination beyond list limits, or full status/assignment audit. 2FA, broader admin RBAC
+and automated browser E2E in CI remain separate M4 work.
+
+**Next**: dashboard login hardening and 2FA, then broader admin permissions as management routes arrive.
+
+---
+
 ## 2026-09-29 — M4 (step 5) — Source-location map (PR #26)
 
 **Housekeeping** — PR #25 (MITRE ATT&CK coverage) was merged into `main` on request; its CI is green.

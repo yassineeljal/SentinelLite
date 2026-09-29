@@ -33,4 +33,4 @@ COPY --from=frontend-builder /app/dist ./static
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 SENTINEL_STATIC_DIR=/app/static
 USER sentinel
 EXPOSE 8000
-CMD ["uvicorn", "sentinel_core.api.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "sentinel_core.api.main:create_app", "--factory", "--no-proxy-headers", "--host", "0.0.0.0", "--port", "8000"]

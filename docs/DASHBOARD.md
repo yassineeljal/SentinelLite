@@ -2,9 +2,9 @@
 
 Who can see alerts, how they prove who they are, and the web app they see them in. Backend code in
 `backend/src/sentinel_core/auth/` (users, passwords, sessions) and `backend/src/sentinel_core/api/`
-(`auth.py`, `alerts.py`); frontend in `frontend/` (React + Vite + TS, ADR 9, its own
-[`frontend/README.md`](../frontend/README.md)). Not built yet: the map, incidents, the MITRE
-ATT&CK chart, 2FA.
+(`auth.py`, `mfa.py`, `alerts.py`, `incidents.py`); frontend in `frontend/` (React + Vite + TS, ADR 9, its own
+[`frontend/README.md`](../frontend/README.md)). Includes alerts, MITRE coverage, the source-location
+map, incident triage and optional per-account TOTP two-factor authentication.
 
 ## Accounts
 
@@ -17,7 +17,7 @@ docker compose exec api sentinel users create --email alice@example.com --role a
 # Confirm password:
 ```
 
-- **Roles**: `analyst` (read alerts; more views arrive with the rest of the dashboard) and `admin`
+- **Roles**: `analyst` (read alerts and manage shared incidents) and `admin`
   (also manages users, later: rules, response). Enforced by a `CHECK` constraint in the database
   and validated again in code — the same "typo can't silently disable a check" principle as rules
   (`DETECTION.md`).
@@ -44,11 +44,69 @@ A session is a random 256-bit token, shown once at login; only its SHA-256 hash 
 | `Secure` | on by default, `SENTINEL_SESSION_COOKIE_SECURE=false` to turn off | Real browsers (and `httpx`, and Python's `http.cookiejar`) never resend a `Secure` cookie over plain HTTP: needed for the lab, never for a network-reachable deployment |
 | Lifetime | `SENTINEL_SESSION_TTL_HOURS` (default 8h), enforced server-side | A stolen cookie stops working on its own after a work day |
 
-`POST /v1/auth/login` (email + password) sets the cookie; `POST /v1/auth/logout` deletes the
-session and clears it; `GET /v1/auth/me` returns the current user or `401`. A wrong password and an
-unknown email give the **exact same** generic `401`, in the same amount of work either way (a
-dummy hash is verified against on an unknown email — see `ingest.py`'s `_DUMMY_HASH` for the same
-reasoning with agent keys): neither timing nor the response reveals which accounts exist.
+`POST /v1/auth/login` accepts `email`, `password`, and an optional `code`. Accounts with 2FA
+require an unused authenticator or recovery code along with the password; the server issues no
+session until both pass. Unknown users, wrong passwords, missing codes and invalid/replayed codes
+share one generic 401. Unknown users still incur an Argon2 verification against a dummy hash.
+Argon2 verification runs off the event loop, with at most two verifications running concurrently per API process.
+`POST /v1/auth/logout` deletes the session; `GET /v1/auth/me` returns the current user or 401.
+Successful authentication/settings responses carry `Cache-Control: no-store`.
+
+## Authentication attempt limits
+
+Postgres-backed atomic counters apply before password verification: **10 attempts per normalized
+login identifier and 50 per source address, per 5-minute fixed window** by default. All attempts
+count, including successful logins; success cannot reset the budget. Unknown identifiers get the
+same limit as real accounts. Once exhausted, the endpoint returns 429 with a `Retry-After` header
+and a readable delay. Blocked attempts do not extend the window. MFA management has a separate
+10-attempt budget per user and shares the source-address budget with login.
+
+The counters are shared across API processes and survive restarts. Expired counters are pruned;
+identifiers are hashed rather than kept as plaintext. A database failure returns 503 instead of
+silently dropping the limit. This is a bounded temporary throttle, not a permanent account lockout.
+Configuration and reverse-proxy considerations are in `OPERATIONS.md`.
+
+## Two-factor authentication
+
+Open **Security** (`/security`) while signed in. Enter the current password, scan the QR code in
+an authenticator app (or enter the setup key manually), then enter its six-digit code to enable
+2FA. The browser renders the QR locally; no secret is sent to a third-party QR service. Enrollment
+expires after ten minutes and is bound to the session that started it. Starting over replaces the
+pending secret; an unconfirmed setup never changes login requirements.
+
+Implementation uses [PyOTP](https://pyauth.github.io/pyotp/) and
+[RFC 6238](https://www.rfc-editor.org/rfc/rfc6238): SHA-1, six digits, 30-second steps, accepting
+one step of clock skew in either direction. The last consumed step is stored under a user row
+lock: neither replaying a code nor sending it concurrently creates another session. Enrollment
+confirmation consumes its code too; wait for the next code before immediately signing in again.
+
+TOTP secrets are encrypted with [Fernet](https://cryptography.io/en/latest/fernet/) and bound to the
+user ID. The key comes from `SENTINEL_MFA_ENCRYPTION_KEY`, outside the database. If it is absent,
+enrollment is unavailable. A missing/wrong key never downgrades an enabled account to password-only
+login. Recovery codes still work because they are independently hashed, not encrypted.
+
+Enabling displays **ten recovery codes once**. Each is a random 128-bit value whose SHA-256 hash
+is stored; it replaces the authenticator code for one login or management action, always together
+with the password. Consumption and session issuance share a transaction, so simultaneous reuse has
+one winner. In Security, password plus an unused factor can regenerate the set or disable 2FA.
+Regeneration invalidates all previous codes. Enabling, regenerating and disabling revoke all old
+sessions, including the current token, and issue a fresh cookie to the requesting browser.
+
+| Method | Endpoint | Request / response |
+|---|---|---|
+| GET | `/v1/auth/2fa` | `{enabled, setup_available, recovery_codes_remaining}`; no secrets |
+| POST | `/v1/auth/2fa/setup` | `{password}` → `{secret, provisioning_uri, expires_at}` |
+| POST | `/v1/auth/2fa/confirm` | `{password, code}` → `{recovery_codes}` + fresh cookie |
+| POST | `/v1/auth/2fa/recovery-codes` | `{password, code}` → replacement `{recovery_codes}` + fresh cookie |
+| POST | `/v1/auth/2fa/disable` | `{password, code}` → 204 + fresh cookie |
+
+Every endpoint requires a full session; every mutation additionally rechecks the current password
+and that the session is still live under the user lock. Setup/management errors are 401 for invalid
+credentials or expired setup, 409 for incompatible enabled/disabled state, and 503 if the required
+key is unavailable. No public signup, password reset, email/SMS fallback, forced enrollment, or
+admin bypass/reset of an existing account's second factor is added. If both the authenticator and
+all recovery codes are lost, an operator can revoke the account and provision a replacement through
+the existing CLI. Keep the encryption key backed up separately from the database.
 
 ## The alerts API
 
@@ -88,13 +146,47 @@ equirectangular SVG scatter plot (a lat/lon graticule, no coastlines) — honest
 not a polished basemap; a real map library (e.g. Leaflet with tiles) is the natural next step if
 this needs to look like an actual map rather than a chart of where things are.
 
+## Incidents
+
+`/incidents` lists shared triage cases, with a status filter and a creation form. An alert's detail
+page links to that form with the alert preselected, or directly to its existing incident. `/incidents/:incidentId` shows the linked
+alerts, the highest non-null risk score among them (or "Not scored"), an assignee and dated notes.
+Both analysts and admins can create, claim, unassign, annotate and change the status of any case.
+"Assign to me" uses the signed-in user; assigning another user is not exposed in this version.
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/v1/incidents?status=&limit=` | Newest first; optional `new`, `investigating`, `closed` filter; limit 1–200, default 100 |
+| POST | `/v1/incidents` | `{title, alert_ids?}`; creates a case and links alerts atomically; returns 201 |
+| GET | `/v1/incidents/{id}` | Summary, linked alerts and notes (oldest first) |
+| PATCH | `/v1/incidents/{id}` | `{status}`; close or reopen without losing notes or linked alerts |
+| POST | `/v1/incidents/{id}/claim` | Assign to the current user |
+| DELETE | `/v1/incidents/{id}/assignee` | Clear the assignee |
+| POST | `/v1/incidents/{id}/notes` | `{body}`; author comes from the session |
+| POST | `/v1/incidents/{id}/alerts` | `{alert_ids}`; link a batch of alerts |
+| DELETE | `/v1/incidents/{id}/alerts/{alert_id}` | Unlink from this case; never deletes the alert or its evidence |
+
+All routes require a user session. Mutations other than creation return 204. Titles are trimmed,
+nonblank and at most 200 characters; notes are trimmed, nonblank and at most 4000 characters.
+NUL characters are rejected because PostgreSQL cannot store them. Alert IDs must be full 64-character
+lowercase hexadecimal IDs, with at most 200 per request. Unknown incidents return 404; invalid
+input returns 422. Unknown alerts or alerts belonging to another incident return 409, with the
+whole batch rolled back. Row locks serialize concurrent linking: an alert belongs to at most one
+incident, and moving it requires explicitly unlinking it first. Linking again to the same incident
+is harmless. Repeated closes retain the original `closed_at`; reopening clears it.
+
+The detail page suggests the latest 200 alerts and also accepts an older alert's full ID from its
+URL. Notes are plain text and immutable. There is no automatic grouping, incident deletion, title
+editing, arbitrary-user assignment, pagination beyond the list limit, or full activity audit yet.
+Apply migration `0007` before starting the updated API (the compose `migrate` service does this).
+
 ## The frontend
 
 `frontend/` is a small single-page app: a login page, an alert list (auto-refreshing every 15 s,
 filterable by rule id, each row linking to its detail page), an alert detail page (MITRE
 techniques, when/who/where, the risk breakdown with every factor's reason, location and
 reputation, the evidence table), a MITRE ATT&CK coverage page (`/mitre`), and a source-location
-map (`/map`) — behind a
+map (`/map`), and incident list/detail pages (`/incidents`, `/incidents/:incidentId`) — behind a
 session-aware router (`ProtectedRoute` redirects to
 `/login` when `GET /v1/auth/me` says there is no session). Nothing here is dashboard-specific
 framework code beyond what `api/client.ts` and `auth/AuthContext.tsx` need: no state management
@@ -112,10 +204,7 @@ same checks CI runs.
 
 ## Not done yet
 
-- **The rest of the dashboard**: incidents. The map has no real basemap yet (see above).
-- **2FA (TOTP)**: planned, not built. `role` RBAC beyond "admin can manage users" (rules, response,
-  agents) arrives with the routes it gates.
-- **No account lockout** after repeated failed logins yet: a determined attacker is slowed only by
-  Argon2's cost. A brute force against the dashboard is exactly the kind of thing `ssh-bruteforce`
-  detects in spirit; a matching `dashboard-login-bruteforce`-style rule, or a Redis-backed lockout
-  like the reputation service's circuit breaker, is a natural next step.
+- The map has no real basemap yet (see above).
+- `role` RBAC beyond account provisioning and shared incident triage (rules, response, agents)
+  arrives with the routes it gates.
+- Automated browser E2E in CI and a full authentication/activity audit remain future work.

@@ -36,6 +36,15 @@ export function AlertDetail() {
         <>
           <header className="alert-detail-header">
             <h1>{detail.alert.title}</h1>
+            <p>
+              {detail.incident_id ? (
+                <Link to={`/incidents/${detail.incident_id}`}>View linked incident</Link>
+              ) : (
+                <Link to={`/incidents?alert=${detail.alert.alert_id}`}>
+                  Create incident from this alert
+                </Link>
+              )}
+            </p>
             <div className="alert-detail-meta">
               <span>{detail.alert.rule_id}</span>
               {detail.mitre.map((technique) => (

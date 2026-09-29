@@ -30,7 +30,10 @@ async def engine(migrated_database: None) -> AsyncGenerator[AsyncEngine]:
     engine = create_async_engine(DATABASE_URL)
     async with engine.begin() as conn:
         await conn.execute(
-            text("TRUNCATE agents, events, events_dead_letter, alerts, users, user_sessions")
+            text(
+                "TRUNCATE agents, events, events_dead_letter, alerts, users, user_sessions,"
+                " incidents, incident_notes, auth_rate_limits"
+            )
         )
     yield engine
     await engine.dispose()
