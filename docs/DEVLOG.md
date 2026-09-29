@@ -13,6 +13,28 @@ Entry template:
 
 ---
 
+## 2026-09-29 — M5 (step 2b) — First real block on the VPS
+
+**What**
+- Deployed step 2 on the production VPS (migration `0010`, api/responder rebuilt, agent wheel installed, `[response]` section with `never_block` = the two SSH source addresses of the moment and `10.0.0.0/8`).
+- Real block: responder in `enforce` (TTL 300 s), a test alert for `45.83.64.10` (a public address checked to be neither a resolver nor a live peer) with a real event of the agent as evidence, `backend = "iptables"`.
+
+**How verified**
+- `-A SENTINEL -s 45.83.64.10/32 -j DROP` appeared within ~15 s, `agent_actions.block` = `done`, SSH access untouched; at the end time the agent lifted the rule by itself (`UNBLOCK ... (expired)`, `blocks.json` empty); ~10 s later the responder released the block and the queued `unblock` was applied (`done`), audit `block.enforce` then `unblock`.
+- Afterwards the responder went back to `dry_run` (the safe default); the agent keeps `backend = "iptables"`, inert while nothing is queued.
+
+**Problems & lessons**
+- The unit ran as root limited to `CAP_NET_ADMIN`, which drops `CAP_DAC_OVERRIDE`: it could not read the 0600 key file of another user. Now the same unprivileged user with ambient network capabilities (PR #33). No unit test could have shown this: it took starting the service on a real host.
+- Two slips of the manual test itself: `docker exec` without `-i` silently discards a heredoc, and a TTL that is not in `.env` cannot be changed with `sed`.
+
+**Not done yet / limits**
+- No `sentinel unblock`, dashboard page or Discord notification. The risk score is still unused by the policy.
+- `enforce` is not left on: enable it deliberately (`SENTINEL_RESPONDER_MODE=enforce`) after reviewing the dry-run blocks (`sentinel blocks`).
+
+**Next**: review the dry-run figures, then enable `enforce`; `sentinel unblock` and the dashboard page.
+
+---
+
 ## 2026-09-29 — M5 (step 2) — Agent action channel: enforce mode, `sentinel-agent-enforcer`, unblock on TTL
 
 **What**
