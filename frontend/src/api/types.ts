@@ -86,3 +86,9 @@ export interface AlertDetail {
   enrichment: Enrichment | null;
   risk: RiskAssessment | null;
 }
+
+export interface MitreSummaryRow {
+  technique: string;
+  count: number;
+  latest_ts: string;
+}

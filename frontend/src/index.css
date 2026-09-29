@@ -260,3 +260,75 @@ section h2 {
   font-size: 0.78rem;
   color: var(--muted);
 }
+
+.top-nav {
+  display: flex;
+  gap: 1.2rem;
+  flex: 1;
+  margin-left: 1.5rem;
+}
+
+.top-nav a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.top-nav a:hover {
+  color: var(--text);
+}
+
+.mitre-page {
+  padding: 1.5rem;
+  max-width: 900px;
+}
+
+.mitre-page select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+}
+
+.mitre-bars {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+}
+
+.mitre-bars li {
+  display: grid;
+  grid-template-columns: 90px 1fr 50px 160px;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.mitre-technique {
+  font-weight: 600;
+}
+
+.mitre-bar-track {
+  background: var(--panel);
+  border-radius: 4px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.mitre-bar-fill {
+  background: var(--accent);
+  height: 100%;
+}
+
+.mitre-count {
+  text-align: right;
+  color: var(--muted);
+}
+
+.mitre-latest {
+  color: var(--muted);
+  font-size: 0.78rem;
+}

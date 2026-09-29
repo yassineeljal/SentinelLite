@@ -5,6 +5,7 @@ import { TopBar } from "./components/TopBar";
 import { AlertDetail } from "./pages/AlertDetail";
 import { Alerts } from "./pages/Alerts";
 import { Login } from "./pages/Login";
+import { Mitre } from "./pages/Mitre";
 
 // Keyed on alertId so React remounts AlertDetail (fresh state) when navigating from one alert's
 // detail page straight to another's, instead of it reusing the same instance with stale data.
@@ -32,6 +33,14 @@ export function App() {
           element={
             <ProtectedRoute>
               <AlertDetailRoute />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/mitre"
+          element={
+            <ProtectedRoute>
+              <Mitre />
             </ProtectedRoute>
           }
         />

@@ -360,3 +360,47 @@ async def test_alert_without_enrichment_has_null_enrichment_and_risk(
     body = response.json()
     assert body["enrichment"] is None and body["risk"] is None
     assert body["detection_latency_ms"] is None  # no evidence event was ever inserted
+
+
+# --- GET /v1/stats/mitre --------------------------------------------------------------------
+
+
+async def test_mitre_summary_requires_authentication(client: AsyncClient) -> None:
+    response = await client.get("/v1/stats/mitre")
+
+    assert response.status_code == 401
+
+
+async def test_mitre_summary_counts_techniques_across_recent_alerts(
+    client: AsyncClient, users: PostgresUserRepository, engine: AsyncEngine
+) -> None:
+    async with async_sessionmaker(engine, expire_on_commit=False).begin() as session:
+        await insert_alerts(
+            session,
+            [
+                alert("aa" * 32, "ssh-bruteforce"),  # T1110, from the alert() helper
+                alert("bb" * 32, "ssh-root-login"),
+            ],
+        )
+    await users.create_user("stats@example.com", PASSWORD, "analyst")
+    await client.post("/v1/auth/login", json={"email": "stats@example.com", "password": PASSWORD})
+
+    response = await client.get("/v1/stats/mitre")
+
+    assert response.status_code == 200
+    techniques = {row["technique"] for row in response.json()}
+    assert "T1110" in techniques
+
+
+async def test_mitre_summary_respects_the_days_window(
+    client: AsyncClient, users: PostgresUserRepository
+) -> None:
+    await users.create_user("window@example.com", PASSWORD, "analyst")
+    await client.post("/v1/auth/login", json={"email": "window@example.com", "password": PASSWORD})
+
+    too_small = await client.get("/v1/stats/mitre", params={"days": 0})
+    too_large = await client.get("/v1/stats/mitre", params={"days": 366})
+    ok = await client.get("/v1/stats/mitre", params={"days": 7})
+
+    assert too_small.status_code == 422 and too_large.status_code == 422
+    assert ok.status_code == 200

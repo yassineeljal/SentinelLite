@@ -13,6 +13,29 @@ Entry template:
 
 ---
 
+## 2026-09-29 — M4 (step 4) — MITRE ATT&CK coverage view (PR #25)
+
+**Housekeeping** — PR #24 (alert detail view) was merged into `main` on request; its CI is green.
+
+**What**
+- **`db.alerts.mitre_summary(session, days=30)`**: alert counts per MITRE technique within a window, most frequent first, with the most recent alert's time per technique. One alert with several techniques counts once towards each — a coverage view ("what techniques are firing"), not a partition of alerts.
+- **`GET /v1/stats/mitre?days=`** (1-365, default 30): its own router and URL prefix (`/v1/stats`, not `/v1/alerts/...`), specifically so it can never collide with the alert-detail catch-all path.
+- **`/mitre` page**: a horizontal bar per technique, width relative to the largest count in the window, a day-window selector (7/30/90), each technique linking to its real `attack.mitre.org` page — no local technique-name lookup kept, so it can never drift from the real taxonomy. A top navigation bar (Alerts / MITRE ATT&CK) appears once logged in.
+- Docs: `DASHBOARD.md` (reordered so "the alerts API" comes before this new section), `frontend/README.md`.
+
+**How verified**
+- `ruff`, `mypy --strict` clean; **890 backend tests pass** with real Redis and Postgres (574 pass, 316 skipped without services): 7 new tests for `mitre_summary` (double-counting across techniques, sort order, most-recent-per-technique, window inclusion/exclusion at the boundary, an empty result, an invalid window rejected) and 3 for the route (requires authentication, real counts across real alerts, the day-window bounds). 4 mutation checks (window filter removed, window validation removed, sort order broken, route left unprotected), all caught.
+- A real Postgres bug caught immediately: `now() - (:days || ' days')::interval` fails under asyncpg (`invalid input for query argument $1: 30 (expected str, got int)` — string concatenation with a bound integer parameter is ambiguous to the driver). Switched to `make_interval(days => :days)`, which is also just clearer.
+- A real SQLAlchemy `Row` gotcha: aliasing the aggregate as `count` collided with `Row`'s own `.count()` method (mypy caught the type mismatch before it became a runtime bug); aliased to `n` instead, with a comment explaining why.
+- Frontend: 6 new component tests (bars render with the right proportions, sub-technique links resolve to the right ATT&CK URL — `T1110.003` → `.../T1110/003/`, empty window, the server's error message, refetching on a window change, the 30-day default) — **36 total**, `typecheck`/`lint`/`format:check`/`build` clean. The same `set-state-in-effect` lint pattern from the previous step reappeared (a dropdown this time, not a route param) and was fixed the same principled way: the reset moved into the `<select>`'s own `onChange`, not the effect, matching what the lint rule itself suggests ("update it from the event that caused the change").
+- **Real stack, real browser**: logged in, navigated to `/mitre`, and confirmed six real techniques (`T1110`, `T1078`, `T1136.001`, `T1548.003`, `T1098.007`, `T1110.001`) rendered with correctly proportional bars and correct per-technique last-seen times, aggregated from every real alert accumulated across this whole project's real-stack testing — screenshot checked. Test user revoked afterward.
+
+**Not done / limits**: the window choices are fixed (7/30/90 days), no custom range; still no map or incidents; no 2FA; no automated browser E2E test in CI.
+
+**Next**: your call again — the map (GeoIP coordinates already exist on enriched alerts), incidents, RBAC as routes need it, 2FA, or back to M3.
+
+---
+
 ## 2026-09-29 — M4 (step 3) — Alert detail view: evidence, enrichment and risk in the dashboard (PR #24)
 
 **Housekeeping** — PR #23 (dashboard frontend: login page, alert list) was merged into `main` on request; its CI is green.

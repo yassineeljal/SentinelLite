@@ -10,7 +10,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from sentinel_core import __version__
-from sentinel_core.api import alerts, auth, ingest
+from sentinel_core.api import alerts, auth, ingest, stats
 from sentinel_core.api.body_limit import BodySizeLimitMiddleware
 from sentinel_core.auth.agent_keys import AgentRepository, DenyAllAgentRepository
 from sentinel_core.auth.registry import PostgresAgentRepository
@@ -78,6 +78,7 @@ def create_app(
     app.include_router(ingest.router)
     app.include_router(auth.router)
     app.include_router(alerts.router)
+    app.include_router(stats.router)
 
     @app.get("/healthz", tags=["ops"])
     async def healthz() -> dict[str, str]:
