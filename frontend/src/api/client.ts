@@ -1,4 +1,4 @@
-import type { Alert, User } from "./types";
+import type { Alert, AlertDetail, User } from "./types";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -69,4 +69,8 @@ export function listAlerts(params: ListAlertsParams = {}): Promise<Alert[]> {
   if (params.rule) query.set("rule", params.rule);
   const qs = query.toString();
   return request<Alert[]>(`/v1/alerts${qs ? `?${qs}` : ""}`);
+}
+
+export function getAlert(alertId: string): Promise<AlertDetail> {
+  return request<AlertDetail>(`/v1/alerts/${encodeURIComponent(alertId)}`);
 }

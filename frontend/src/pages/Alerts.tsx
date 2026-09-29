@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { ApiError, listAlerts } from "../api/client";
 import type { Alert } from "../api/types";
 
@@ -20,6 +21,7 @@ function formatTime(iso: string): string {
 }
 
 export function Alerts() {
+  const navigate = useNavigate();
   const [alerts, setAlerts] = useState<Alert[] | null>(null);
   const [rule, setRule] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -78,7 +80,11 @@ export function Alerts() {
           </thead>
           <tbody>
             {alerts.map((alert) => (
-              <tr key={alert.alert_id}>
+              <tr
+                key={alert.alert_id}
+                className="clickable-row"
+                onClick={() => navigate(`/alerts/${alert.alert_id}`)}
+              >
                 <td>{formatTime(alert.ts)}</td>
                 <td>{alert.severity}</td>
                 <td>
@@ -91,7 +97,9 @@ export function Alerts() {
                   )}
                 </td>
                 <td>
-                  <span title={alert.title}>{alert.rule_id}</span>
+                  <Link to={`/alerts/${alert.alert_id}`} title={alert.title}>
+                    {alert.rule_id}
+                  </Link>
                 </td>
                 <td>{alert.host ?? "—"}</td>
                 <td>{alert.user_name ?? "—"}</td>

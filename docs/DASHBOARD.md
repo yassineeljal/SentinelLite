@@ -50,18 +50,27 @@ unknown email give the **exact same** generic `401`, in the same amount of work 
 dummy hash is verified against on an unknown email — see `ingest.py`'s `_DUMMY_HASH` for the same
 reasoning with agent keys): neither timing nor the response reveals which accounts exist.
 
-## The first protected endpoint
+## The alerts API
 
-`GET /v1/alerts` (list only, no evidence yet) requires a valid session. It exists to prove the
-wiring end to end and give the frontend something to render; `sentinel alerts show` remains the way
-to see evidence with detection latency until a dedicated endpoint is built alongside the rest of
-the dashboard. Every future dashboard route is added to routers that depend on the same
-`authenticate_user`, so nothing is reachable by accident before it has been decided to be.
+Two routes, both requiring a valid session:
+
+- `GET /v1/alerts?limit=&rule=` — the list, same fields `sentinel alerts list` prints.
+- `GET /v1/alerts/{alert_id_prefix}` — one alert's full detail: MITRE techniques, the group it was
+  raised for, its evidence events (oldest first, with the raw log line), detection latency in
+  milliseconds, and the enrichment/risk JSON exactly as `set_enrichment` stored them. Accepts a
+  hexadecimal id prefix (>= 6 chars), like the CLI; an ambiguous prefix or a malformed one is `400`,
+  an unknown id is `404`. This is the same information `sentinel alerts show` prints — the CLI and
+  the dashboard are two views of one query (`db/alerts.get_alert`), not two implementations.
+
+Every future dashboard route is added to routers that depend on the same `authenticate_user`, so
+nothing is reachable by accident before it has been decided to be.
 
 ## The frontend
 
-`frontend/` is a small single-page app: a login page and an alert list (auto-refreshing every
-15 s, filterable by rule id), behind a session-aware router (`ProtectedRoute` redirects to
+`frontend/` is a small single-page app: a login page, an alert list (auto-refreshing every 15 s,
+filterable by rule id, each row linking to its detail page), and an alert detail page (MITRE
+techniques, when/who/where, the risk breakdown with every factor's reason, location and
+reputation, the evidence table) — behind a session-aware router (`ProtectedRoute` redirects to
 `/login` when `GET /v1/auth/me` says there is no session). Nothing here is dashboard-specific
 framework code beyond what `api/client.ts` and `auth/AuthContext.tsx` need: no state management
 library, no component kit — the surface is still small enough that plain React + `fetch` is the
@@ -78,7 +87,7 @@ same checks CI runs.
 
 ## Not done yet
 
-- **The rest of the dashboard**: map, incidents, MITRE ATT&CK chart. The alert list has no evidence view yet either (`sentinel alerts show` still has more detail than the API exposes).
+- **The rest of the dashboard**: map, incidents, an aggregate MITRE ATT&CK chart (the detail page shows one alert's own techniques, not a fleet-wide view).
 - **2FA (TOTP)**: planned, not built. `role` RBAC beyond "admin can manage users" (rules, response,
   agents) arrives with the routes it gates.
 - **No account lockout** after repeated failed logins yet: a determined attacker is slowed only by

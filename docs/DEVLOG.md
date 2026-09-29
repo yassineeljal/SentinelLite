@@ -13,6 +13,29 @@ Entry template:
 
 ---
 
+## 2026-09-29 — M4 (step 3) — Alert detail view: evidence, enrichment and risk in the dashboard (PR #24)
+
+**Housekeeping** — PR #23 (dashboard frontend: login page, alert list) was merged into `main` on request; its CI is green.
+
+**What**
+- **`GET /v1/alerts/{alert_id_prefix}`**: the same information `sentinel alerts show` prints — MITRE techniques, the group the alert was raised for, its evidence events (oldest first, with the raw log line), detection latency in milliseconds, and the enrichment/risk JSON as stored. Reuses `db/alerts.get_alert` (no second implementation): the CLI and the dashboard are two views of one query. Same id-prefix rules as the CLI (hexadecimal, >= 6 chars): a malformed or ambiguous prefix is `400`, an unknown id is `404`.
+- **Alert detail page** (`/alerts/:alertId`): when/who/where, a risk breakdown with every factor's own reason, location and reputation (or "not enriched yet" / "non-public address" when there is nothing to show), and the evidence table. Each row in the alert list now links to it; the route is keyed on `alertId` so navigating from one alert straight to another's detail page remounts with fresh state instead of flashing the previous alert's data.
+- Docs: `DASHBOARD.md`, `frontend/README.md`.
+
+**How verified**
+- `ruff`, `mypy --strict` clean; **880 backend tests pass** with real Redis and Postgres (574 pass, 306 skipped without services): 20 new tests for the detail endpoint (full detail with real evidence/enrichment/risk, requires authentication, unknown id, malformed id, ambiguous prefix, an alert with neither enrichment nor risk yet). 3 mutation checks on the endpoint (hex validation skipped, not-found ignored, ambiguous id ignored), all caught.
+- Frontend: 12 new component tests (`AlertDetail`: renders technique/risk/location/evidence, the server's error message, "not scored/enriched yet", a non-public address, the back link; `Alerts`: clicking a row navigates to its detail page) on top of the 18 already there — **30 total**, `typecheck`/`lint`/`format:check`/`build` all clean, including a genuine oxlint warning (`set-state-in-effect`) fixed properly (keying the route on `alertId` so React resets state by remounting, instead of the effect resetting it by hand) rather than suppressed.
+- **Real stack, real browser** (Playwright, one-off verification again, not a dependency): logged in, clicked through to the real `ssh-impossible-travel` alert from earlier real-stack testing, and confirmed every section renders with real data (GeoIP location, AbuseIPDB reputation, the risk factor list, both evidence lines with their raw log text) — screenshot checked. Test user revoked afterward.
+
+**Problems & lessons**
+- My first `detection_latency_ms` test assertion assumed a small, predictable value; it is actually `created_at (real wall-clock `now()` at insert) - received_at (the fixed test timestamp)`, which is days in a fictional-dated test — the CLI's own existing test only checks the label is *present*, for exactly this reason. Fixed to check "a positive number", not a specific one; a small arithmetic slip in the risk-score expectation (forgot to add the Tor factor) was caught by simply running the test, not by review.
+
+**Not done / limits**: still no map, incidents or an aggregate MITRE ATT&CK chart; no 2FA; no automated browser E2E test in CI.
+
+**Next**: your call — more of the dashboard (map, MITRE chart, incidents), RBAC as routes need it, 2FA, or back to M3 (reputation retry policy, a real GeoIP-configured deployment for `ssh-impossible-travel`).
+
+---
+
 ## 2026-09-29 — M4 (step 2) — Dashboard frontend: login page and alert list (PR #23)
 
 **Housekeeping** — PR #22 (dashboard authentication) was merged into `main` on request; its CI is green.

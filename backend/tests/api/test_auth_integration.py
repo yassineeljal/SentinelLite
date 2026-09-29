@@ -2,7 +2,7 @@
 tests/db/test_agent_registry_integration.py for how to run these locally."""
 
 from collections.abc import AsyncGenerator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
@@ -14,8 +14,13 @@ from sentinel_core.api.main import create_app
 from sentinel_core.auth.agent_keys import DenyAllAgentRepository
 from sentinel_core.auth.user_registry import PostgresUserRepository
 from sentinel_core.config import Settings
-from sentinel_core.db.alerts import insert_alerts
+from sentinel_core.db.alerts import insert_alerts, set_enrichment
+from sentinel_core.db.events import insert_events
 from sentinel_core.detection.alerts import Alert
+from sentinel_core.enrichment.abuseipdb import Reputation
+from sentinel_core.enrichment.enricher import Enrichment
+from sentinel_core.enrichment.risk import assess
+from sentinel_core.schema.event import Action, Category, Event, Outcome, Source
 from tests.support import DATABASE_URL, InMemoryPublisher
 
 pytestmark = [
@@ -226,3 +231,132 @@ async def test_a_local_lab_domain_is_accepted_not_just_real_ones(
     )
 
     assert response.status_code == 200 and response.json()["email"] == "admin@sentinellite.local"
+
+
+# --- GET /v1/alerts/{id}: full detail (evidence, enrichment, risk) ------------------------------
+
+
+def evidence_event(n: int) -> Event:
+    return Event(
+        event_id=f"{n:064x}",
+        ts=T0 + timedelta(seconds=n),
+        received_at=T0 + timedelta(seconds=n, milliseconds=200),
+        agent_id=UUID(int=1),
+        host="ubuntu-01",
+        source=Source.LINUX_AUTH,
+        category=Category.AUTHENTICATION,
+        action=Action.LOGIN_FAILED,
+        outcome=Outcome.FAILURE,
+        severity=20,
+        src_ip="203.0.113.7",
+        user_name="root",
+        raw=f"failed password attempt number {n}",
+    )
+
+
+async def test_alert_detail_includes_evidence_enrichment_and_risk(
+    client: AsyncClient, users: PostgresUserRepository, engine: AsyncEngine
+) -> None:
+    detail_id = "ef" * 32
+    events = [evidence_event(i) for i in range(4)]
+    detailed_alert = Alert(
+        alert_id=detail_id,
+        rule_id="ssh-bruteforce",
+        title="SSH brute force",
+        mitre=["T1110"],
+        severity=60,
+        ts=T0 + timedelta(seconds=3),
+        group={"src_ip": "203.0.113.7"},
+        src_ip="203.0.113.7",
+        event_ids=[e.event_id for e in reversed(events)],  # newest first
+        match_count=4,
+    )
+    reputation = Reputation(
+        score=90, total_reports=200, distinct_reporters=50, is_tor=True, checked_at=T0
+    )
+    async with async_sessionmaker(engine, expire_on_commit=False).begin() as session:
+        await insert_events(session, events)
+        await insert_alerts(session, [detailed_alert])
+        await set_enrichment(
+            session,
+            detail_id,
+            Enrichment(ip_scope="public", reputation=reputation),
+            assess(60, Enrichment(ip_scope="public", reputation=reputation)),
+        )
+    await users.create_user("show@example.com", PASSWORD, "analyst")
+    await client.post("/v1/auth/login", json={"email": "show@example.com", "password": PASSWORD})
+
+    response = await client.get(f"/v1/alerts/{detail_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["alert"]["alert_id"] == detail_id
+    assert body["mitre"] == ["T1110"]
+    assert body["group"] == {"src_ip": "203.0.113.7"}
+    assert [e["raw"] for e in body["evidence"]] == [e.raw for e in events]  # oldest first
+    assert body["detection_latency_ms"] is not None and body["detection_latency_ms"] > 0
+    assert body["enrichment"]["reputation"]["score"] == 90
+    assert body["risk"]["score"] == 87  # 60 + 90//4 (22) + 5 (tor)
+
+
+async def test_alert_detail_requires_authentication(client: AsyncClient) -> None:
+    response = await client.get(f"/v1/alerts/{'a' * 64}")
+
+    assert response.status_code == 401
+
+
+async def test_alert_detail_of_an_unknown_id_is_404(
+    client: AsyncClient, users: PostgresUserRepository
+) -> None:
+    await users.create_user("notfound@example.com", PASSWORD, "analyst")
+    await client.post(
+        "/v1/auth/login", json={"email": "notfound@example.com", "password": PASSWORD}
+    )
+
+    response = await client.get(f"/v1/alerts/{'ef' * 32}")
+
+    assert response.status_code == 404
+
+
+async def test_alert_detail_of_a_malformed_id_is_400(
+    client: AsyncClient, users: PostgresUserRepository
+) -> None:
+    await users.create_user("badid@example.com", PASSWORD, "analyst")
+    await client.post("/v1/auth/login", json={"email": "badid@example.com", "password": PASSWORD})
+
+    too_short = await client.get("/v1/alerts/abcde")
+    not_hex = await client.get("/v1/alerts/not-hexadecimal-at-all")
+
+    assert too_short.status_code == 400 and not_hex.status_code == 400
+
+
+async def test_alert_detail_of_an_ambiguous_prefix_is_400(
+    client: AsyncClient, users: PostgresUserRepository, engine: AsyncEngine
+) -> None:
+    async with async_sessionmaker(engine, expire_on_commit=False).begin() as session:
+        await insert_alerts(session, [alert("abcdef" + "01" * 29), alert("abcdef" + "02" * 29)])
+    await users.create_user("ambiguous@example.com", PASSWORD, "analyst")
+    await client.post(
+        "/v1/auth/login", json={"email": "ambiguous@example.com", "password": PASSWORD}
+    )
+
+    response = await client.get("/v1/alerts/abcdef")
+
+    assert response.status_code == 400
+
+
+async def test_alert_without_enrichment_has_null_enrichment_and_risk(
+    client: AsyncClient, users: PostgresUserRepository, engine: AsyncEngine
+) -> None:
+    bare_id = "12" * 32
+    async with async_sessionmaker(engine, expire_on_commit=False).begin() as session:
+        await insert_alerts(session, [alert(bare_id)])
+    await users.create_user("bare@example.com", PASSWORD, "analyst")
+    await client.post("/v1/auth/login", json={"email": "bare@example.com", "password": PASSWORD})
+
+    response = await client.get(f"/v1/alerts/{bare_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["enrichment"] is None and body["risk"] is None
+    assert body["detection_latency_ms"] is None  # no evidence event was ever inserted

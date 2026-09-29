@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as api from "../../api/client";
 import { ApiError } from "../../api/client";
@@ -33,6 +33,17 @@ function renderAlerts() {
   return render(
     <MemoryRouter>
       <Alerts />
+    </MemoryRouter>,
+  );
+}
+
+function renderAlertsWithDetailRoute() {
+  return render(
+    <MemoryRouter initialEntries={["/alerts"]}>
+      <Routes>
+        <Route path="/alerts" element={<Alerts />} />
+        <Route path="/alerts/:alertId" element={<p>Detail page</p>} />
+      </Routes>
     </MemoryRouter>,
   );
 }
@@ -111,4 +122,15 @@ describe("Alerts", () => {
       vi.useRealTimers();
     }
   });
+});
+
+it("navigates to the alert's detail page when a row is clicked", async () => {
+  const { default: userEvent } = await import("@testing-library/user-event");
+  vi.spyOn(api, "listAlerts").mockResolvedValue([alert()]);
+  const user = userEvent.setup();
+  renderAlertsWithDetailRoute();
+
+  await user.click(await screen.findByText("ssh-bruteforce"));
+
+  expect(await screen.findByText("Detail page")).toBeInTheDocument();
 });
