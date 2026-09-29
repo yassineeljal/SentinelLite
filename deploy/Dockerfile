@@ -1,6 +1,13 @@
 # syntax=docker/dockerfile:1
 # Build context is the repository root (see docker-compose.yml).
 
+FROM node:22-slim AS frontend-builder
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+COPY frontend/ ./
+RUN npm run build
+
 FROM python:3.12-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
@@ -22,7 +29,8 @@ COPY --from=builder /app/.venv /app/.venv
 COPY backend/alembic.ini ./alembic.ini
 COPY backend/migrations ./migrations
 COPY rules ./rules
-ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1
+COPY --from=frontend-builder /app/dist ./static
+ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 SENTINEL_STATIC_DIR=/app/static
 USER sentinel
 EXPOSE 8000
 CMD ["uvicorn", "sentinel_core.api.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

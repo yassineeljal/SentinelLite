@@ -13,6 +13,37 @@ Entry template:
 
 ---
 
+## 2026-09-29 — M4 (step 2) — Dashboard frontend: login page and alert list (PR #23)
+
+**Housekeeping** — PR #22 (dashboard authentication) was merged into `main` on request; its CI is green.
+
+**What**
+- **`frontend/`**: React 19 + Vite + TypeScript (ADR 9), scaffolded with `create-vite`, own `README.md`. A login page (`/login`) and an auto-refreshing alert list (`/alerts`, 15 s poll, filterable by rule id), behind a session-aware `ProtectedRoute` that asks `GET /v1/auth/me` and redirects when there is no session. `api/client.ts` is a small typed `fetch` wrapper (no state library, no component kit — the surface is still small enough that plain React is the simplest thing that works).
+- **Same-origin by design** (ADR 35): the API now serves the built dashboard directly. `deploy/Dockerfile` gets a `node:22-slim` build stage producing `frontend/dist`, copied into the final image; `SENTINEL_STATIC_DIR` (baked into the image) tells `create_app` to mount it, with a catch-all route falling back to `index.html` for client-routed paths (`/alerts` on a hard refresh) while every `/v1/*` and `/healthz` route still takes priority. `vite.config.ts` proxies `/v1` to the backend in dev for the same same-origin reason. Neither CORS nor a laxer `SameSite` cookie policy is ever needed.
+- Tooling: `oxlint`, `prettier`, `vitest` + Testing Library (component tests, fetch mocked), all wired into a new `frontend` CI job (typecheck, lint, format check, tests, build).
+- Docs: `DASHBOARD.md` (frontend section), `OPERATIONS.md`, ADR 35, `frontend/README.md`.
+
+**Design notes**
+- **The path-escape guard is tested directly, not only through HTTP requests.** `_resolve_static_path` (the function deciding what file a request maps to) is a pure, importable function specifically so a `..`-carrying path can be tested without depending on whatever normalisation the ASGI server or Starlette's own routing already does to a raw URL first — testing only through `client.get("/../etc/passwd")` would have let a real regression pass, since httpx/browsers already collapse literal `..` in a URL before the request is even sent.
+- **`resolve_target` was hoisted to module level** for exactly that reason: a nested closure cannot be imported and unit-tested on its own.
+
+**How verified**
+- `ruff`, `mypy --strict` clean; **874 backend tests pass** with real Redis and Postgres (574 pass, 300 skipped without services): 18 new tests for `_resolve_static_path`/`_mount_frontend` (index served at `/`, a client-routed path falls back to `index.html`, real asset files and bundled `/assets/*` are served as themselves, a request without `static_dir` configured is an ordinary 404, a missing `index.html` is a clean 404 not a crash, and direct unit tests of the containment logic against a file that genuinely exists outside `static_dir`).
+- Frontend: 24 component/unit tests (`vitest` + Testing Library) covering the API client's error parsing (both FastAPI error body shapes), the login form (loading state, success, the server's exact error message, redirect-if-already-logged-in, disabled while submitting), the alert list (renders rows and their risk badges, empty state, error state, missing fields shown as `—`, the rule filter refetching, polling), and `ProtectedRoute`'s three states. `npm run typecheck`, `lint`, `format:check` and `build` all clean.
+- **Mutation checks on the security-relevant static-serving path**: removing the path-containment check, scoping the catch-all route wrong, and never mounting the frontend at all were all caught; a first attempt at the "escape to a real outside file" test was itself broken (see below) and, once fixed, caught the containment-check mutation too.
+- **Real stack, real browser** (Playwright, used only as a one-off verification tool — not added as a dependency): built the image (`node:22-slim` stage included), brought up the full compose stack, created a real user, and drove an actual Chromium browser through the login form, the alert list (38 real alerts from every previous step's real-stack testing, correctly rendered with risk-coloured badges), sign-out, and a direct navigation to `/alerts` (server-side SPA fallback, then redirected to `/login` once the session was gone) — screenshots confirmed the pages render as designed. Test users revoked afterward.
+
+**Problems & lessons**
+- **A path-traversal test that looked right and proved nothing.** My first "outside the static directory" test wrote its "secret" file under the *same* `tmp_path` as the directory it was supposed to be outside of — pytest fixtures are cached per test, so requesting `tmp_path` both directly and indirectly through the `built` fixture returned the identical directory, and the "escape" landed *inside* the sandbox it was meant to escape. The mutation that removed the containment check passed cleanly, twice, before this was caught by actually reading the debug output rather than trusting the assertion's shape. Fixed with `tmp_path_factory.mktemp(...)`, a genuinely separate directory; lesson: a security test's fixture setup deserves the same suspicion as the code it's testing, and a mutation that survives on the SECOND try is worth debugging with prints, not re-explaining away as "equivalent."
+- Vitest + fake timers + Testing Library's `findBy*`/`waitFor` (which use real timers internally) hang forever if fake timers are enabled globally; scoping `vi.useFakeTimers()` to only the one test that needs it, and enabling it *before* the component mounts its `setInterval`, fixed it.
+- httpx's `ASGITransport` never runs the app's lifespan (no startup/shutdown), so `app.state.users`/`db_sessions` — built inside the lifespan when not explicitly injected — silently never exist unless a test passes them itself; several new tests needed a throwaway, never-actually-connected sessionmaker for routes that short-circuit before touching the database.
+
+**Not done / limits**: no map, incidents or MITRE chart yet; no evidence view for an alert (the CLI still shows more than the API exposes); no 2FA; no automated browser E2E test in CI (the Playwright check was a manual, one-off verification, matching how every other "real stack" check in this project has been done).
+
+**Next**: RBAC beyond "admin manages users" as the routes that need it are built, then the rest of the dashboard (map, MITRE chart, incidents) and 2FA.
+
+---
+
 ## 2026-09-29 — M4 (step 1) — Dashboard authentication: accounts, sessions, first protected endpoint (PR #22)
 
 **Housekeeping** — PR #21 (impossible travel) was merged into `main` on request; its CI is green.

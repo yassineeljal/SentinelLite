@@ -142,6 +142,10 @@ docker compose exec api sentinel users list                              # never
 docker compose exec api sentinel users revoke <user-id>                  # also ends every session
 ```
 
+Then open `http://127.0.0.1:8000/` (or wherever `SENTINEL_BIND_ADDR` points): the API serves the
+built dashboard on the same origin. `npm run dev` under `frontend/` is for frontend development
+only (hot reload, proxied to a backend on `:8000`); the compose stack always serves the built app.
+
 `SENTINEL_SESSION_COOKIE_SECURE` defaults to `true` (the cookie is only ever sent over HTTPS). This
 lab's compose stack talks plain HTTP: `deploy/.env` sets it to `false` for that reason. **Set it
 back to `true` (or remove the line) for any deployment reachable over a real network** — a

@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     session_ttl_hours: int = Field(default=8, gt=0)
     session_cookie_secure: bool = True
 
+    # Built frontend (frontend/dist) to serve, if any: None means API-only (tests, local dev
+    # against `npm run dev`'s own server). The Docker image sets this; docker-compose.yml does not
+    # need to, since the image default already matches where the build stage puts it.
+    static_dir: Path | None = None
+
     @field_validator("abuseipdb_api_key", mode="before")
     @classmethod
     def _empty_key_means_off(cls, value: object) -> object:
