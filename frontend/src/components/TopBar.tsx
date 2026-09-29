@@ -16,6 +16,7 @@ export function TopBar() {
       {user && (
         <nav className="top-nav">
           <Link to="/alerts">Alerts</Link>
+          <Link to="/map">Map</Link>
           <Link to="/mitre">MITRE ATT&amp;CK</Link>
         </nav>
       )}

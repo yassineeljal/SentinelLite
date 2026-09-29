@@ -19,6 +19,7 @@ from sentinel_core.db.events import insert_events
 from sentinel_core.detection.alerts import Alert
 from sentinel_core.enrichment.abuseipdb import Reputation
 from sentinel_core.enrichment.enricher import Enrichment
+from sentinel_core.enrichment.geoip import GeoInfo
 from sentinel_core.enrichment.risk import assess
 from sentinel_core.schema.event import Action, Category, Event, Outcome, Source
 from tests.support import DATABASE_URL, InMemoryPublisher
@@ -403,4 +404,61 @@ async def test_mitre_summary_respects_the_days_window(
     ok = await client.get("/v1/stats/mitre", params={"days": 7})
 
     assert too_small.status_code == 422 and too_large.status_code == 422
+    assert ok.status_code == 200
+
+
+# --- GET /v1/stats/geo ----------------------------------------------------------------------
+
+
+async def test_geo_summary_requires_authentication(client: AsyncClient) -> None:
+    response = await client.get("/v1/stats/geo")
+
+    assert response.status_code == 401
+
+
+async def test_geo_summary_reports_enriched_locations(
+    client: AsyncClient, users: PostgresUserRepository, engine: AsyncEngine
+) -> None:
+    geo_id = "aa" * 32
+    async with async_sessionmaker(engine, expire_on_commit=False).begin() as session:
+        await insert_alerts(session, [alert(geo_id)])
+        await set_enrichment(
+            session,
+            geo_id,
+            Enrichment(
+                ip_scope="public",
+                geo=GeoInfo(
+                    country_code="DE",
+                    country="Germany",
+                    city="Berlin",
+                    latitude=52.52,
+                    longitude=13.4,
+                ),
+            ),
+            assess(60, None),
+        )
+    await users.create_user("geo@example.com", PASSWORD, "analyst")
+    await client.post("/v1/auth/login", json={"email": "geo@example.com", "password": PASSWORD})
+
+    response = await client.get("/v1/stats/geo")
+
+    assert response.status_code == 200
+    berlin = next(row for row in response.json() if row["city"] == "Berlin")
+    assert berlin["country_code"] == "DE"
+    assert berlin["latitude"] == pytest.approx(52.52)
+    assert berlin["count"] == 1
+
+
+async def test_geo_summary_respects_the_days_window(
+    client: AsyncClient, users: PostgresUserRepository
+) -> None:
+    await users.create_user("geowindow@example.com", PASSWORD, "analyst")
+    await client.post(
+        "/v1/auth/login", json={"email": "geowindow@example.com", "password": PASSWORD}
+    )
+
+    too_small = await client.get("/v1/stats/geo", params={"days": 0})
+    ok = await client.get("/v1/stats/geo", params={"days": 90})
+
+    assert too_small.status_code == 422
     assert ok.status_code == 200

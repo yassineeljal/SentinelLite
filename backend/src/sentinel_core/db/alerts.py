@@ -166,6 +166,61 @@ async def mitre_summary(session: AsyncSession, *, days: int = 30) -> list[MitreS
     ]
 
 
+@dataclass(frozen=True)
+class GeoSummaryRow:
+    country_code: str | None
+    country: str | None
+    city: str | None
+    latitude: float
+    longitude: float
+    count: int  # alerts from this city, within the window
+    max_risk_score: int | None
+    latest_ts: datetime
+
+
+async def geo_summary(session: AsyncSession, *, days: int = 30) -> list[GeoSummaryRow]:
+    """Alert counts by city in the last `days` days, most frequent first.
+
+    Only alerts enriched with GeoIP coordinates count (a non-public source, or a public one the
+    database does not know, contributes nothing here: there is no point to plot). Grouped by city
+    and country code, not by exact coordinates, so repeated attacks from the same metro area (whose
+    individual addresses rarely resolve to the exact same point) show as one sized dot, not a
+    scatter of near-duplicates.
+    """
+    if days <= 0:
+        raise ValueError("days must be positive")
+    result = await session.execute(
+        text(
+            "SELECT enrichment->'geo'->>'country_code' AS country_code,"
+            " enrichment->'geo'->>'country' AS country,"
+            " enrichment->'geo'->>'city' AS city,"
+            " avg((enrichment->'geo'->>'latitude')::float) AS latitude,"
+            " avg((enrichment->'geo'->>'longitude')::float) AS longitude,"
+            " count(*) AS n, max(risk_score) AS max_risk_score, max(ts) AS latest_ts"
+            " FROM alerts"
+            " WHERE ts >= now() - make_interval(days => :days)"
+            " AND enrichment->'geo'->>'latitude' IS NOT NULL"
+            " AND enrichment->'geo'->>'longitude' IS NOT NULL"
+            " GROUP BY country_code, country, city"
+            " ORDER BY n DESC, country_code, city"
+        ),
+        {"days": days},
+    )
+    return [
+        GeoSummaryRow(
+            country_code=row.country_code,
+            country=row.country,
+            city=row.city,
+            latitude=row.latitude,
+            longitude=row.longitude,
+            count=row.n,
+            max_risk_score=row.max_risk_score,
+            latest_ts=row.latest_ts,
+        )
+        for row in result
+    ]
+
+
 async def list_alerts(
     session: AsyncSession, *, limit: int = 20, rule_id: str | None = None
 ) -> list[AlertSummary]:

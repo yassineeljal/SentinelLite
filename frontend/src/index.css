@@ -332,3 +332,72 @@ section h2 {
   color: var(--muted);
   font-size: 0.78rem;
 }
+
+.map-page {
+  padding: 1.5rem;
+  max-width: 1000px;
+}
+
+.world-map {
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.map-background {
+  fill: var(--panel);
+}
+
+.map-graticule {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.map-equator,
+.map-meridian {
+  stroke: #34405c;
+}
+
+.map-point {
+  fill-opacity: 0.75;
+  stroke: var(--bg);
+  stroke-width: 1;
+}
+
+.map-point-low {
+  fill: #6fcf97;
+}
+
+.map-point-medium {
+  fill: #f2c14e;
+}
+
+.map-point-high {
+  fill: #ff9f68;
+}
+
+.map-point-critical {
+  fill: #ff6b6b;
+}
+
+.map-point-unknown {
+  fill: var(--muted);
+}
+
+.map-legend {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.map-legend .risk {
+  min-width: 2rem;
+  display: inline-block;
+  text-align: center;
+}
