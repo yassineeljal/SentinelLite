@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -56,6 +57,7 @@ class AlertDetail:
     detection_latency: timedelta | None
     enrichment: dict[str, Any] | None  # as stored; None until the enricher has run
     risk: dict[str, Any] | None  # RiskAssessment as stored: score, level, factors
+    incident_id: UUID | None
 
 
 async def insert_alerts(session: AsyncSession, alerts: list[Alert]) -> None:
@@ -240,8 +242,8 @@ async def get_alert(session: AsyncSession, alert_id_prefix: str) -> AlertDetail 
     matches = (
         await session.execute(
             text(
-                f"SELECT {_SUMMARY_COLUMNS}, mitre, group_values, event_ids, enrichment, risk "  # noqa: S608
-                "FROM alerts "
+                f"SELECT {_SUMMARY_COLUMNS}, mitre, group_values, event_ids, enrichment, risk,"  # noqa: S608
+                " incident_id FROM alerts "
                 "WHERE alert_id LIKE :prefix LIMIT 2"
             ),
             {"prefix": f"{alert_id_prefix}%"},
@@ -284,4 +286,5 @@ async def get_alert(session: AsyncSession, alert_id_prefix: str) -> AlertDetail 
         detection_latency=latency,
         enrichment=dict(row.enrichment) if row.enrichment is not None else None,
         risk=dict(row.risk) if row.risk is not None else None,
+        incident_id=row.incident_id,
     )

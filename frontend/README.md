@@ -30,8 +30,15 @@ src/
 ├── api/        # typed fetch client + response types (kept in sync by hand with the backend)
 ├── auth/       # session state: AuthProvider, useAuth()
 ├── components/ # TopBar, ProtectedRoute
-└── pages/      # Login, Alerts, AlertDetail, Mitre, Map
+└── pages/      # Login, Alerts, AlertDetail, Mitre, Map, Incidents, IncidentDetail, Security
 ```
 
-Not built yet: the map, the MITRE ATT&CK chart, incidents, 2FA (see `docs/DEVLOG.md` for what
-each step actually shipped).
+Incident triage supports creating a case from an alert, linking/unlinking alerts, assigning it to
+yourself, notes, and closing/reopening. See `docs/DASHBOARD.md` for the API and limits.
+
+`/security` provides optional TOTP setup, local QR rendering, recovery codes and authenticated
+factor management. Login accepts an authenticator or recovery code for enrolled accounts.
+The operator must configure the stable encryption key before enrollment is available
+(`docs/OPERATIONS.md`). Secrets and recovery codes stay in component memory, never local storage.
+
+Not built yet: a real map basemap and automated browser E2E in CI.

@@ -131,6 +131,15 @@ The Postgres tests truncate `agents`, `events` and `events_dead_letter` in the t
 `SENTINEL_TEST_DATABASE_URL` at a database that holds real data. CI runs the same tests with
 service containers.
 
+## Secret scanning in CI
+
+The `secrets` CI job runs [ggshield](https://github.com/GitGuardian/ggshield-action) against the
+PR diff, using the repo secret `GITGUARDIAN_API_KEY` (set once with
+`gh secret set GITGUARDIAN_API_KEY`, never committed). Known non-secrets (e.g. RFC test vectors
+used in tests) are listed, with a reason, in `.gitguardian.yaml` at the repo root — this file is
+read by `ggshield` itself, not by GitGuardian's separate hosted GitHub App check, which ignores it
+and must instead be resolved per-incident on the GitGuardian dashboard.
+
 ## Dashboard accounts
 
 See [`DASHBOARD.md`](DASHBOARD.md) for the design. There is no self-registration: create the first
@@ -150,6 +159,44 @@ only (hot reload, proxied to a backend on `:8000`); the compose stack always ser
 lab's compose stack talks plain HTTP: `deploy/.env` sets it to `false` for that reason. **Set it
 back to `true` (or remove the line) for any deployment reachable over a real network** — a
 `Secure` cookie leaking on the wire is far cheaper to prevent than to explain afterward.
+
+### Two-factor setup and login limits
+
+Apply migration `0008` before the updated API starts (the compose `migrate` service handles this).
+Generate a **stable** Fernet key once, using the backend environment:
+
+```bash
+cd backend
+uv run python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+```
+
+Put it in the ignored `deploy/.env` as `SENTINEL_MFA_ENCRYPTION_KEY=<generated key>`, keep a secure
+backup separate from Postgres, and recreate the API service. Never commit or regenerate this key
+on each restart. Losing/changing it makes existing authenticator secrets unreadable; recovery codes
+continue to work and can disable 2FA before re-enrolling with a new key. There is no automatic key
+rotation in this version. An empty value leaves existing password-only accounts usable but makes new
+2FA enrollment unavailable. Invalid key syntax fails settings validation. The UI explains how to
+scan the local QR, confirm enrollment and save recovery codes once the key is configured.
+
+Optional attempt limits (defaults shown):
+
+```dotenv
+SENTINEL_AUTH_WINDOW_SECONDS=300
+SENTINEL_AUTH_ACCOUNT_ATTEMPTS=10
+SENTINEL_AUTH_IP_ATTEMPTS=50
+```
+
+All attempts count, including successful ones. Login is limited by normalized identifier and peer
+address; 2FA management is separately limited by user and shares the address budget. 429 includes
+`Retry-After`; blocked attempts do not extend the window. Limits live in Postgres, and expired rows
+are pruned on the next attempt. During a database outage authentication fails closed with 503.
+
+The Docker command explicitly uses `--no-proxy-headers`: an arbitrary `X-Forwarded-For` header
+cannot change the source budget. When running uvicorn directly, use that flag too. If a reverse proxy
+is introduced, configure uvicorn to trust only its known peer addresses and ensure the proxy replaces
+forwarded headers; otherwise all clients behind it share one source budget. Do not trust `*`.
+Use HTTPS and synchronized clocks for TOTP deployments. A code is accepted only once (including
+setup confirmation); if a freshly used code is refused, wait for the next 30-second step.
 
 ## Detector worker and alerts
 

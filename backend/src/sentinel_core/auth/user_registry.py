@@ -10,8 +10,9 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from sentinel_core.auth.passwords import hash_password, verify_password
+from sentinel_core.auth.passwords import hash_password, verify_password_async
 from sentinel_core.auth.sessions import generate_session_token, hash_session_token
+from sentinel_core.auth.totp import SecretBox, consume_factor
 from sentinel_core.db.models import User, UserSession
 
 VALID_ROLES = ("admin", "analyst")
@@ -49,6 +50,19 @@ def _info(row: User) -> UserInfo:
         created_at=row.created_at,
         revoked_at=row.revoked_at,
     )
+
+
+def add_session(session: AsyncSession, user_id: UUID, ttl: timedelta) -> str:
+    """Issue a token inside the caller's transaction, after all authentication checks."""
+    token = generate_session_token()
+    session.add(
+        UserSession(
+            id=hash_session_token(token),
+            user_id=user_id,
+            expires_at=datetime.now(UTC) + ttl,
+        )
+    )
+    return token
 
 
 class PostgresUserRepository:
@@ -93,29 +107,49 @@ class PostgresUserRepository:
             return [_info(row) for row in rows]
 
     async def authenticate(self, email: str, password: str) -> UserInfo | None:
-        """None for an unknown email, a revoked user, or a wrong password (one generic outcome:
-        never reveals which of these it was)."""
+        """Legacy password-only check. Refuses MFA accounts; HTTP login uses `login`."""
         async with self._sessions() as session:
             row = await session.scalar(
                 select(User).where(User.email == email.strip().lower(), User.revoked_at.is_(None))
             )
             candidate_hash = row.password_hash if row is not None else _DUMMY_HASH
-            if not verify_password(password, candidate_hash):
+            if not await verify_password_async(password, candidate_hash):
                 return None
-            return _info(row) if row is not None else None
+            return _info(row) if row is not None and row.totp_secret is None else None
+
+    async def login(
+        self,
+        email: str,
+        password: str,
+        code: str,
+        ttl: timedelta,
+        box: SecretBox,
+    ) -> tuple[UserInfo, str] | None:
+        # Serialize factor consumption, revocation and session creation on the same user row.
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(User)
+                .where(
+                    User.email == email.strip().lower(),
+                    User.revoked_at.is_(None),
+                )
+                .with_for_update()
+            )
+            candidate_hash = row.password_hash if row is not None else _DUMMY_HASH
+            if not await verify_password_async(password, candidate_hash):
+                return None
+            if row is None:
+                return None
+            if row.totp_secret is not None and not consume_factor(
+                row, code, box, datetime.now(UTC)
+            ):
+                return None
+            return _info(row), add_session(session, row.id, ttl)
 
     async def create_session(self, user_id: UUID, ttl: timedelta) -> str:
-        token = generate_session_token()
-        async with self._sessions() as session:
-            session.add(
-                UserSession(
-                    id=hash_session_token(token),
-                    user_id=user_id,
-                    expires_at=datetime.now(UTC) + ttl,
-                )
-            )
-            await session.commit()
-        return token
+        """Internal session issuance for trusted callers; HTTP login uses `login` atomically."""
+        async with self._sessions.begin() as session:
+            return add_session(session, user_id, ttl)
 
     async def resolve_session(self, token: str) -> UserInfo | None:
         """The session's user, or None if the token is unknown, expired, or the user was

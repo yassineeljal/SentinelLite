@@ -9,6 +9,7 @@ export function Login() {
   const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -22,7 +23,7 @@ export function Login() {
     setError(null);
     setBusy(true);
     try {
-      await login(email, password);
+      await login(email, password, code.trim() || undefined);
       navigate("/alerts", { replace: true });
     } catch (err) {
       // The API gives the exact same message for a wrong password and an unknown email on
@@ -57,6 +58,21 @@ export function Login() {
             onChange={(e) => setPassword(e.target.value)}
           />
         </label>
+        <label>
+          Authentication or recovery code
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            autoComplete="one-time-code"
+            maxLength={64}
+            autoCapitalize="none"
+            spellCheck={false}
+            aria-describedby="code-help"
+          />
+        </label>
+        <p id="code-help" className="form-help">
+          Leave empty unless two-factor authentication is enabled.
+        </p>
         {error && (
           <p className="error" role="alert">
             {error}

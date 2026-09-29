@@ -38,3 +38,29 @@ def test_reputation_is_off_by_default_and_the_budget_stays_under_the_free_plan(
 
     assert loaded.abuseipdb_api_key is None
     assert loaded.abuseipdb_daily_limit < 1000  # the free plan's daily limit
+
+
+def test_mfa_key_is_optional_validated_and_hidden(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cryptography.fernet import Fernet
+    from pydantic import ValidationError
+
+    monkeypatch.delenv("SENTINEL_MFA_ENCRYPTION_KEY", raising=False)
+    assert settings(monkeypatch, MFA_ENCRYPTION_KEY="").mfa_encryption_key is None
+    key = Fernet.generate_key().decode()
+    loaded = settings(monkeypatch, MFA_ENCRYPTION_KEY=key)
+    assert loaded.mfa_encryption_key is not None
+    assert key not in repr(loaded)
+    with pytest.raises(ValidationError, match="valid Fernet key"):
+        settings(monkeypatch, MFA_ENCRYPTION_KEY="not-a-fernet-key")
+
+
+@pytest.mark.parametrize(
+    "name", ["AUTH_WINDOW_SECONDS", "AUTH_ACCOUNT_ATTEMPTS", "AUTH_IP_ATTEMPTS"]
+)
+def test_auth_limits_cannot_be_disabled_with_zero(
+    monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        settings(monkeypatch, **{name: "0"})

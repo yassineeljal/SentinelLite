@@ -82,6 +82,7 @@ export interface AlertDetail {
   mitre: string[];
   group: Record<string, unknown>;
   evidence: EvidenceEvent[];
+  incident_id: string | null;
   detection_latency_ms: number | null;
   enrichment: Enrichment | null;
   risk: RiskAssessment | null;
@@ -102,4 +103,35 @@ export interface GeoSummaryRow {
   count: number;
   max_risk_score: number | null;
   latest_ts: string;
+}
+
+export type IncidentStatus = "new" | "investigating" | "closed";
+
+export interface Incident {
+  id: string;
+  title: string;
+  status: IncidentStatus;
+  assignee_email: string | null;
+  created_at: string;
+  closed_at: string | null;
+  alert_count: number;
+  max_risk_score: number | null;
+}
+
+export interface IncidentDetail {
+  summary: Incident;
+  alerts: Alert[];
+  notes: { id: string; author_email: string; body: string; created_at: string }[];
+}
+
+export interface MFAStatus {
+  enabled: boolean;
+  setup_available: boolean;
+  recovery_codes_remaining: number;
+}
+
+export interface MFASetup {
+  secret: string;
+  provisioning_uri: string;
+  expires_at: string;
 }
