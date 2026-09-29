@@ -1,0 +1,14 @@
+# expect: 0
+# description: Two sources with six attempts each: twelve in total, but the rule counts per source.
+2026-09-29T10:00:00+00:00 prod-web-01 sshd[9000]: Invalid user deploy from 203.0.113.40 port 44000
+2026-09-29T10:00:01+00:00 prod-web-01 sshd[9001]: Invalid user deploy from 198.51.100.41 port 44001
+2026-09-29T10:00:02+00:00 prod-web-01 sshd[9006]: Invalid user deploy from 203.0.113.40 port 44006
+2026-09-29T10:00:03+00:00 prod-web-01 sshd[9007]: Invalid user deploy from 198.51.100.41 port 44007
+2026-09-29T10:00:04+00:00 prod-web-01 sshd[9012]: Invalid user deploy from 203.0.113.40 port 44012
+2026-09-29T10:00:05+00:00 prod-web-01 sshd[9013]: Invalid user deploy from 198.51.100.41 port 44013
+2026-09-29T10:00:06+00:00 prod-web-01 sshd[9018]: Invalid user deploy from 203.0.113.40 port 44018
+2026-09-29T10:00:07+00:00 prod-web-01 sshd[9019]: Invalid user deploy from 198.51.100.41 port 44019
+2026-09-29T10:00:08+00:00 prod-web-01 sshd[9024]: Invalid user deploy from 203.0.113.40 port 44024
+2026-09-29T10:00:09+00:00 prod-web-01 sshd[9025]: Invalid user deploy from 198.51.100.41 port 44025
+2026-09-29T10:00:10+00:00 prod-web-01 sshd[9030]: Invalid user deploy from 203.0.113.40 port 44030
+2026-09-29T10:00:11+00:00 prod-web-01 sshd[9031]: Invalid user deploy from 198.51.100.41 port 44031

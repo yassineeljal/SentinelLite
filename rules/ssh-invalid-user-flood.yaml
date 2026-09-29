@@ -1,0 +1,20 @@
+id: ssh-invalid-user-flood
+title: SSH probing with unknown user names
+description: >
+  Ten or more `Invalid user` attempts from the same source IP within 60 seconds, whatever the
+  names. On a host that only accepts public keys sshd never logs `Failed password`, so
+  ssh-bruteforce cannot fire; a scanner hammering one or a few names then shows up only as repeated
+  `Invalid user` lines. ssh-user-enumeration counts distinct names and ignores one name tried
+  many times; this rule counts attempts. The two can fire together on a wide, fast scan. One alert
+  per source per five minutes. Blind spot: a source staying under ten attempts a minute is not caught.
+mitre: [T1110]
+severity: 45
+type: threshold
+match:
+  source: linux.auth
+  action: invalid_user
+group_by: [src_ip]
+threshold:
+  count: 10
+  window: 60s
+cooldown: 300s

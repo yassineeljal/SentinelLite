@@ -1,0 +1,22 @@
+# expect: 2
+# description: Two sources, ten attempts each, interleaved: one alert per source.
+2026-09-29T10:00:00+00:00 prod-web-01 sshd[8000]: Invalid user admin from 203.0.113.30 port 43000
+2026-09-29T10:00:01+00:00 prod-web-01 sshd[8001]: Invalid user admin from 198.51.100.31 port 43001
+2026-09-29T10:00:02+00:00 prod-web-01 sshd[8006]: Invalid user admin from 203.0.113.30 port 43006
+2026-09-29T10:00:03+00:00 prod-web-01 sshd[8007]: Invalid user admin from 198.51.100.31 port 43007
+2026-09-29T10:00:04+00:00 prod-web-01 sshd[8012]: Invalid user admin from 203.0.113.30 port 43012
+2026-09-29T10:00:05+00:00 prod-web-01 sshd[8013]: Invalid user admin from 198.51.100.31 port 43013
+2026-09-29T10:00:06+00:00 prod-web-01 sshd[8018]: Invalid user admin from 203.0.113.30 port 43018
+2026-09-29T10:00:07+00:00 prod-web-01 sshd[8019]: Invalid user admin from 198.51.100.31 port 43019
+2026-09-29T10:00:08+00:00 prod-web-01 sshd[8024]: Invalid user admin from 203.0.113.30 port 43024
+2026-09-29T10:00:09+00:00 prod-web-01 sshd[8025]: Invalid user admin from 198.51.100.31 port 43025
+2026-09-29T10:00:10+00:00 prod-web-01 sshd[8030]: Invalid user admin from 203.0.113.30 port 43030
+2026-09-29T10:00:11+00:00 prod-web-01 sshd[8031]: Invalid user admin from 198.51.100.31 port 43031
+2026-09-29T10:00:12+00:00 prod-web-01 sshd[8036]: Invalid user admin from 203.0.113.30 port 43036
+2026-09-29T10:00:13+00:00 prod-web-01 sshd[8037]: Invalid user admin from 198.51.100.31 port 43037
+2026-09-29T10:00:14+00:00 prod-web-01 sshd[8042]: Invalid user admin from 203.0.113.30 port 43042
+2026-09-29T10:00:15+00:00 prod-web-01 sshd[8043]: Invalid user admin from 198.51.100.31 port 43043
+2026-09-29T10:00:16+00:00 prod-web-01 sshd[8048]: Invalid user admin from 203.0.113.30 port 43048
+2026-09-29T10:00:17+00:00 prod-web-01 sshd[8049]: Invalid user admin from 198.51.100.31 port 43049
+2026-09-29T10:00:18+00:00 prod-web-01 sshd[8054]: Invalid user admin from 203.0.113.30 port 43054
+2026-09-29T10:00:19+00:00 prod-web-01 sshd[8055]: Invalid user admin from 198.51.100.31 port 43055
