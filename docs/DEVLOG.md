@@ -13,6 +13,26 @@ Entry template:
 
 ---
 
+## 2026-09-29 — M5 (step 3) — `sentinel unblock`
+
+**What**
+- `sentinel unblock <address>`: releases every active block of the address (enforce or dry run), queues an `unblock` for the agents that applied it, writes `unblock.manual` to the audit log, and prints how to keep the address out for good (`sentinel allowlist add`). The "queue unblocks" query is now shared with the automatic TTL release.
+- OPERATIONS.md: false-positive procedure, including the on-host fallback when the platform is down.
+
+**Why**
+The safety net that was missing before `enforce` can be left on: a wrong block must be undone in seconds, without editing the database.
+
+**How verified**
+- 7 new integration tests (release + agent told to unblock + audit, IPv4-mapped form is a different address, second call finds nothing, garbage and CIDR refused, dry-run block queues nothing). Full suite 1100 passed; `ruff`, `mypy --strict` clean.
+
+**Not done yet / limits**
+- Nothing stops a later alert from blocking the address again (by design: use the allowlist).
+- The address is matched exactly: a network (`1.2.3.0/24`) is refused rather than expanded.
+
+**Next**: review the dry-run figures, enable `enforce`; dashboard page and Discord notification.
+
+---
+
 ## 2026-09-29 — M5 (step 2b) — First real block on the VPS
 
 **What**

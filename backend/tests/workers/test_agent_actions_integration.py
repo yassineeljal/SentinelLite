@@ -12,6 +12,7 @@ from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from sentinel_core import cli
 from sentinel_core.api.main import create_app
 from sentinel_core.auth.registry import PostgresAgentRepository
 from sentinel_core.bus.alerts_stream import RedisAlertPublisher
@@ -239,3 +240,64 @@ async def test_a_block_that_expired_before_it_was_fetched_is_not_handed_out(
 
     fetched = (await platform.client.get("/v1/agents/me/actions", headers=auth)).json()
     assert fetched["actions"] == []
+
+
+async def unblock(platform: Platform, address: str) -> int:
+    args = cli.build_parser().parse_args(["unblock", address])
+    return await cli._response(args, platform.sessions)
+
+
+async def test_unblock_releases_the_block_queues_an_unblock_and_audits_it(
+    platform: Platform, capsys: pytest.CaptureFixture[str]
+) -> None:
+    agent, auth = await platform.agent()
+    await platform.alert(await platform.event(agent))
+
+    assert await unblock(platform, ATTACKER) == 0
+
+    assert "allowlist add" in capsys.readouterr().out  # tells how to keep it out for good
+    ((released_at, released_by),) = await platform.rows(
+        "SELECT released_at, released_by FROM blocked_ips"
+    )
+    assert released_at is not None and released_by == "cli"
+    fetched = (await platform.client.get("/v1/agents/me/actions", headers=auth)).json()
+    kinds = [a["kind"] for a in fetched["actions"]]
+    assert kinds == ["block", "unblock"]  # the agent applies them in this order: net effect none
+    actions = [r[0] for r in await platform.rows("SELECT action FROM audit_log ORDER BY id")]
+    assert actions == ["block.enforce", "unblock.manual"]
+
+
+async def test_unblock_works_with_the_mapped_ipv6_form_and_is_not_repeated(
+    platform: Platform, capsys: pytest.CaptureFixture[str]
+) -> None:
+    agent, _ = await platform.agent()
+    await platform.alert(await platform.event(agent))
+
+    assert await unblock(platform, f"::ffff:{ATTACKER}") == 1  # a different address, no match
+    assert await unblock(platform, ATTACKER) == 0
+    assert await unblock(platform, ATTACKER) == 1  # nothing left to lift
+    assert "no active block" in capsys.readouterr().err
+    assert len(await platform.rows("SELECT 1 FROM agent_actions WHERE kind = 'unblock'")) == 1
+
+
+@pytest.mark.parametrize(
+    "value", ["not-an-ip", "1.2.3.4; DROP TABLE blocked_ips", "1.2.3.0/24", ""]
+)
+async def test_unblock_refuses_what_is_not_an_address(
+    platform: Platform, value: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert await unblock(platform, value) == 1
+    assert "not an IP address" in capsys.readouterr().err
+
+
+async def test_unblocking_a_dry_run_block_queues_nothing(
+    platform: Platform,
+) -> None:
+    agent, _ = await platform.agent()
+    await platform.alert(await platform.event(agent))
+    async with platform.engine.begin() as conn:
+        await conn.execute(text("UPDATE blocked_ips SET mode = 'dry_run'"))
+        await conn.execute(text("DELETE FROM agent_actions"))
+
+    assert await unblock(platform, ATTACKER) == 0
+    assert await platform.rows("SELECT 1 FROM agent_actions") == []
