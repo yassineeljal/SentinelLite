@@ -18,6 +18,7 @@ export function TopBar() {
           <Link to="/alerts">Alerts</Link>
           <Link to="/security">Security</Link>
           <Link to="/incidents">Incidents</Link>
+          <Link to="/blocks">Blocks</Link>
           <Link to="/map">Map</Link>
           <Link to="/mitre">MITRE ATT&amp;CK</Link>
         </nav>

@@ -4,6 +4,7 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { TopBar } from "./components/TopBar";
 import { AlertDetail } from "./pages/AlertDetail";
 import { Alerts } from "./pages/Alerts";
+import { Blocks } from "./pages/Blocks";
 import { Incidents } from "./pages/Incidents";
 import { IncidentDetail } from "./pages/IncidentDetail";
 import { Security } from "./pages/Security";
@@ -74,6 +75,14 @@ export function App() {
           element={
             <ProtectedRoute>
               <IncidentDetailRoute />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/blocks"
+          element={
+            <ProtectedRoute>
+              <Blocks />
             </ProtectedRoute>
           }
         />

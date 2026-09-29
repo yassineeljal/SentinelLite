@@ -28,6 +28,7 @@ class BlockSummary:
     created_at: datetime
     expires_at: datetime
     released_at: datetime | None
+    released_by: str | None = None
 
 
 @dataclass(frozen=True)
@@ -133,7 +134,8 @@ async def record_audit(
 async def list_blocks(session: AsyncSession, limit: int = 20) -> list[BlockSummary]:
     rows = await session.execute(
         text(
-            "SELECT id, host(ip), rule_id, reason, mode, created_at, expires_at, released_at "
+            "SELECT id, host(ip), rule_id, reason, mode, created_at, expires_at, released_at, "
+            "released_by "
             "FROM blocked_ips ORDER BY created_at DESC, id DESC LIMIT :limit"
         ),
         {"limit": limit},
