@@ -56,12 +56,14 @@ def _run(config: Config, once: bool, retries: int) -> int:
     if not once:
         for signum in (signal.SIGINT, signal.SIGTERM):
             signal.signal(signum, lambda *_: stop.set())
+    client = IngestClient(config.server_url, config.key, config.ca_file)
     shipper = Shipper(
         config,
-        IngestClient(config.server_url, config.key, config.ca_file),
+        client,
         StateStore(config.state_file),
         stop,
         max_unavailable=retries if once else None,
+        heartbeat=None if once else client.heartbeat,
     )
     try:
         if once:

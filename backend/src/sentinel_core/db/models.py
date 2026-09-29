@@ -48,6 +48,10 @@ class Agent(Base):
     key_hash: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # Liveness (docs/OPERATIONS.md, "Agent watchdog"): the heartbeat sets `last_seen_at`; the
+    # watchdog sets `silent_since` when it stops, and clears it when the agent is back.
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    silent_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
 
 class User(Base):

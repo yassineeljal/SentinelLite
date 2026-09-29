@@ -76,6 +76,7 @@ class IngestClient:
         self, base_url: str, key: str, ca_file: Path | None = None, timeout: float = 10.0
     ) -> None:
         self._url = base_url.rstrip("/") + "/v1/ingest"
+        self._heartbeat_url = base_url.rstrip("/") + "/v1/agents/me/heartbeat"
         self._key = key
         self._timeout = timeout
         handlers: list[urllib.request.BaseHandler] = [_NoRedirect()]
@@ -105,6 +106,23 @@ class IngestClient:
         try:
             with self._opener.open(request, timeout=self._timeout) as response:
                 return Accepted(self._accepted(response.read(), len(lines)))
+        except urllib.error.HTTPError as exc:
+            return self._from_error(exc)
+        except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:
+            return Unavailable(f"{type(exc).__name__}: {getattr(exc, 'reason', exc)}")
+
+    def heartbeat(self) -> Result:
+        """Tell the platform this agent is alive, even with nothing to ship (a quiet host would
+        otherwise look dead). Never raises; a 204 is `Accepted(0)`."""
+        request = urllib.request.Request(  # noqa: S310 - scheme validated in the configuration
+            self._heartbeat_url,
+            data=b"",
+            method="POST",
+            headers={"Authorization": f"Bearer {self._key}", "User-Agent": USER_AGENT},
+        )
+        try:
+            with self._opener.open(request, timeout=self._timeout):
+                return Accepted(0)
         except urllib.error.HTTPError as exc:
             return self._from_error(exc)
         except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:

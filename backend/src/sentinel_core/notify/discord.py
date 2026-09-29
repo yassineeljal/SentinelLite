@@ -72,6 +72,17 @@ def release_line(*, address: str) -> str:
     return f"✅ **RELEASED** `{_text(address)}` (block expired)"
 
 
+def silent_line(*, name: str, last_seen: str, minutes: int) -> str:
+    return (
+        f"🔇 **SILENT** agent `{_text(name)}` has not reported for {minutes} min "
+        f"(last seen {_text(last_seen)} UTC): detection is blind on that host"
+    )
+
+
+def back_line(*, name: str) -> str:
+    return f"🔔 agent `{_text(name)}` is reporting again"
+
+
 def compose(lines: Sequence[str]) -> str:
     """One message for a batch of lines: capped, so a burst never floods the channel."""
     shown = list(lines[:MAX_LINES])

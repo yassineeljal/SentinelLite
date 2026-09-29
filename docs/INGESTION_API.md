@@ -95,3 +95,9 @@ A revoked agent is indistinguishable from an unknown one (same `401`). Names are
 - `last_seen_at` tracking (needs write throttling to avoid one UPDATE per batch).
 - The `GET /v1/agents/me/actions` polling endpoint used by the responder.
 - Disabling `/docs` and `/openapi.json` outside development.
+
+## Heartbeat
+
+`POST /v1/agents/me/heartbeat` (agent key, empty body) answers `204` and sets the agent's `last_seen_at`.
+`401` for a missing, unknown or revoked key. The agent sends it once a minute so that silence means
+something even on a host with nothing to ship.

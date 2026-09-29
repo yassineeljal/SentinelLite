@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     # (`sentinel allowlist`) and of every non-public range: your own address, the platform's.
     responder_allowlist: str = ""
     responder_batch_size: int = Field(default=100, gt=0)
+    # Agent watchdog: an agent that has not sent its heartbeat (once a minute) for this long is
+    # announced as silent, and again when it is back.
+    watchdog_silence_seconds: int = Field(default=300, ge=120, le=86_400)
+    watchdog_interval_seconds: int = Field(default=30, ge=5, le=600)
     # Optional: a Discord webhook the responder posts to on every block and release. A secret.
     discord_webhook_url: SecretStr | None = None
     responder_claim_idle_ms: int = Field(default=60_000, ge=0)

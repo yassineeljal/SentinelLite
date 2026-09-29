@@ -13,6 +13,26 @@ Entry template:
 
 ---
 
+## 2026-09-29 — Reliability — Agent heartbeat and watchdog
+
+**What**
+- Agent: a heartbeat (`POST /v1/agents/me/heartbeat`) at start then every 60 s, from the shipper loop; a failure never stops shipping, a refused key stops the agent.
+- Platform: migration `0011` (`agents.last_seen_at`, `silent_since`), the endpoint, and a `watchdog` worker (compose service, always on) that announces on Discord and in its log an agent silent for 5 min (`SENTINEL_WATCHDOG_SILENCE_SECONDS`) and its return. `sentinel agents list` shows `last seen`. ADR 42.
+
+**Why**
+The log agent was down for 2 h 20 earlier today and nothing said so. A dead agent makes detection blind without any error anywhere, and a quiet host legitimately ships nothing, so silence had to be made meaningful by an explicit heartbeat.
+
+**How verified**
+- Backend: 12 new integration tests (heartbeat sets the time, needs a valid key, revoked agent refused, only its own row; silent announced once, within the limit not, never-reported not, revoked not; recovery announced once and silence can recur; two agents; Discord down changes nothing; `agents list`). Agent: 9 new tests (client contract and failures, once at start then per minute on a fake clock, failure does not stop shipping, refused key stops it). 1286 backend and 173 agent tests, `ruff`, `mypy --strict` clean.
+
+**Not done yet / limits**
+- The enforcer has no heartbeat of its own, and the watchdog cannot tell "agent dead" from "platform unreachable from the agent": both are announced.
+- Nothing yet monitors the platform's own workers (a stopped detector is silent too).
+
+**Next**: deploy and stop the log agent on purpose to see the message; then review the dry-run figures and `enforce`.
+
+---
+
 ## 2026-09-29 — M6 — Web detection from Traefik's access log
 
 **What**

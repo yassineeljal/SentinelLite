@@ -4,6 +4,7 @@ import random
 import threading
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -342,3 +343,84 @@ def test_once_mode_gives_up_when_the_server_stays_unreachable(harness: Harness) 
 
     assert len(client.calls) == 4  # the first try and three retries
     assert harness.committed() is None  # nothing was lost: it stays in the file
+
+
+class Clock:
+    """A monotonic clock the test moves by hand."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def run_for(
+    h: Harness, client: ScriptedClient, beats: Callable[[], Result], seconds: float
+) -> None:
+    """Run the shipper loop for `seconds` of fake time (each idle wait advances the clock)."""
+    clock = Clock()
+    poll = h.config.poll_interval
+
+    def wait(delay: float) -> bool:
+        clock.now += delay
+        if clock.now - 1000.0 >= seconds:
+            h.stop.set()
+        return h.stop.is_set()
+
+    shipper = Shipper(
+        h.config,
+        client,
+        StateStore(h.state_file),
+        h.stop,
+        wait=wait,
+        rng=random.Random(1),
+        heartbeat=beats,
+    )
+    with patch("sentinel_agent.shipper.time.monotonic", clock):
+        assert poll > 0
+        shipper.run()
+
+
+def test_a_heartbeat_is_sent_at_start_then_once_a_minute_even_when_idle(tmp_path: Path) -> None:
+    h = Harness(tmp_path)  # nothing to ship at all
+    beats: list[int] = []
+
+    def beat() -> Result:
+        beats.append(1)
+        return Accepted(0)
+
+    run_for(h, ScriptedClient(), beat, seconds=185)
+
+    assert len(beats) == 4  # at 0, 60, 120 and 180 seconds
+
+
+def test_no_heartbeat_callable_means_none_is_sent(tmp_path: Path) -> None:
+    h = Harness(tmp_path)
+    h.append("l1")
+    client = ScriptedClient()
+
+    h.shipper(client).drain()  # the --once path
+
+    assert client.sent_texts == [["l1"]]
+
+
+def test_a_failed_heartbeat_never_stops_the_shipping(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    h = Harness(tmp_path)
+    h.append("l1", "l2")
+    client = ScriptedClient()
+
+    with caplog.at_level("WARNING"):
+        run_for(h, client, lambda: Unavailable("HTTP 503"), seconds=5)
+
+    assert client.sent_texts == [["l1", "l2"]]
+    assert "heartbeat not delivered" in caplog.text
+
+
+def test_a_refused_key_on_a_heartbeat_stops_the_agent(tmp_path: Path) -> None:
+    h = Harness(tmp_path)
+
+    with pytest.raises(AuthenticationError):
+        run_for(h, ScriptedClient(), lambda: Unauthorized(), seconds=5)

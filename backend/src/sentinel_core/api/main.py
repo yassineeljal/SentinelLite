@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sentinel_core import __version__
 from sentinel_core.api import (
     agent_actions,
+    agent_health,
     alerts,
     auth,
     incidents,
@@ -86,6 +87,7 @@ def create_app(
     app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.ingest_max_body_bytes)
     app.include_router(ingest.router)
     app.include_router(agent_actions.router)
+    app.include_router(agent_health.router)
     app.include_router(auth.router)
     app.include_router(mfa.router)
     app.include_router(alerts.router)

@@ -18,7 +18,7 @@ scenarios, and CI fails if the detection benchmark drifts.
 | Attack scenarios detected | **61 / 61** |
 | Scenarios matching their exact expected alert count | **108 / 108** |
 | False alerts on 933 replayed benign events | **0** |
-| Automated tests | **1 274** (real Redis and PostgreSQL in CI), `mypy --strict`, `ruff` |
+| Automated tests | **1 286** (real Redis and PostgreSQL in CI), `mypy --strict`, `ruff` |
 | Attack → alert latency (real `hydra` → `sshd` → agent → alert) | **7.4 s** |
 
 Full per-rule figures: [`docs/BENCHMARK.md`](docs/BENCHMARK.md) (generated, checked by CI).
