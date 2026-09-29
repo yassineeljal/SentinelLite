@@ -5,7 +5,7 @@
 
 ## 1. Goals and constraints
 
-**Goal**: collect logs (Linux, Windows, web), detect attacks mapped to MITRE ATT&CK, enrich alerts, respond automatically, and present everything in a web dashboard.
+**Goal**: collect logs (Linux and web), detect attacks mapped to MITRE ATT&CK, enrich alerts, respond automatically, and present everything in a web dashboard.
 
 | Constraint | Consequence on the design |
 |---|---|
@@ -24,11 +24,9 @@
 flowchart LR
     subgraph Lab["Monitored machines"]
         L[Linux agent<br/>auth.log, nginx, journald]
-        W[Windows agent<br/>Event Log + Sysmon]
     end
 
     L -- "HTTPS + agent key<br/>batches of raw logs" --> API
-    W -- "HTTPS + agent key" --> API
 
     subgraph Core["Platform (Docker Compose on the Mac)"]
         API[api<br/>FastAPI]
@@ -67,7 +65,6 @@ The platform runs as a Docker Compose stack directly on the Mac (**OrbStack**). 
 | VM | Role | Notes |
 |---|---|---|
 | `target-linux` | Ubuntu Server (arm64): SSH, Nginx, `auth.log`, Linux agent | Attack target |
-| `target-windows` | Windows 11 ARM + Sysmon + Windows agent | Attack target; ARM64 Sysmon support to be verified at M6 (fallback: replay `.evtx` files) |
 | `attacker` | Kali Linux (arm64) | Attacks **our own machines only** |
 
 Development, unit tests and integration runs all happen on the Mac. The API is published on `127.0.0.1` by default (`SENTINEL_BIND_ADDR`); once the lab exists it is bound to the host-only interface IP, **never** `0.0.0.0`. The same compose file can later be deployed in a dedicated `platform` VM for a more realistic demo. Only the `attacker` VM may generate attack traffic, and only towards the `target-*` VMs.
@@ -77,7 +74,7 @@ Development, unit tests and integration runs all happen on the Mac. The API is p
 > reach the platform through `host.orb.internal`, which lands on the Mac's `localhost` (the API stays
 > bound to `127.0.0.1`); UTM VMs need `SENTINEL_BIND_ADDR` set to the Mac's address on the VM network,
 > which **varies** (`192.168.139.3` on the development Mac, not `192.168.64.1`) and must be discovered.
-> UTM stays the target for the isolated network (Host Only, QEMU backend) and for the Windows VM.
+> UTM stays the target for the isolated network (Host Only, QEMU backend).
 > See [`lab/README.md`](../lab/README.md).
 
 ## 4. Components
@@ -255,8 +252,7 @@ SentinelLite/
 │   └── tests/
 ├── rules/                   # YAML rules (one per file) + rule tests
 ├── agents/
-│   ├── linux/
-│   └── windows/
+│   └── linux/
 ├── frontend/                # React + Vite + TS
 ├── lab/                     # UTM/VM setup notes, cloud-init, Kali attack scenarios
 ├── datasets/                # labelled logs for the benchmark
@@ -317,6 +313,7 @@ SentinelLite/
 | 37 | **TOTP with session-bound enrollment, encrypted secrets, single-use recovery codes and Postgres attempt budgets** | Plaintext secrets; password-only recovery; process-local limits; a separate OTP login session | All factors are verified before issuing a session. User row locks serialize consumption and session issuance with revocation and factor changes. Every management change reauthenticates and rotates all sessions. A stable Fernet key stays outside Postgres; recovery codes retain only hashes. Existing Postgres provides atomic, restart-safe account/source limits without another authentication dependency. No forced enrollment or admin factor-reset route is added. |
 | 38 | **The responder decides in a pure policy function, on its own stream (`alerts.respond`), dry-run only until an action channel exists; blocking is limited to sweeping/guessing rules** | Reading `alerts.new` (one consumer group per stream: consumers delete what they acknowledge); deciding inside the detector; blocking on any alert with a high severity; `enforce` that silently behaves like dry-run | Every guardrail (rule list, severity floor, non-public ranges incl. IPv4-mapped IPv6, allowlist that wins, dedup, rate cap, mandatory bounded TTL) is testable without Redis, Postgres or a firewall, and each refusal has a named reason. An alert about a SUCCESSFUL login never blocks: the source may be a legitimate user. The worker refuses `enforce` at startup instead of pretending. `blocked_ips.alert_id` is unique (at-least-once delivery) and `audit_log` is append-only through a trigger. |
 | 39 | **Enforcement through a pull action channel to a separate, privileged enforcer; the agent applies the platform's requests only within its own limits** | Pushing rules over SSH; giving the log agent firewall privileges; obeying the platform blindly; `ufw`/`nftables` backends first | Blocks are rows of `agent_actions` (unique per block, agent and kind: enqueueing is idempotent) sent only to the active Linux agents that reported the attacker's events. The agent polls with its own key and can only see and answer its own actions. A separate `sentinel-agent-enforcer` service holds `CAP_NET_ADMIN`, the log agent keeps none. The enforcer re-checks every address (never private/loopback/…, mandatory `never_block`), caps the active blocks, clamps the TTL, lifts blocks by itself at their end time and re-applies them after a reboot: a compromised platform can at worst drop traffic from `max_blocks` public addresses for `max_ttl_seconds`. Rules live in a dedicated `SENTINEL` chain, easy to audit and to flush. |
+| 40 | **No Windows agent: the platform monitors Linux (SSH, and web next)** | A Windows/Sysmon agent (live), `.evtx` replay only | The deployment is a public Linux VPS and the operator only runs Linux: there is no Windows machine to monitor or to test on, and an agent that cannot be run cannot be verified. The `windows.*` sources stay in the schema and the ingestion API as reserved names (nothing produces or parses them); the effort goes to `nginx.access` and to enforcing the response. |
 
 ## 14. Roadmap (vertical slices)
 
@@ -330,17 +327,16 @@ Instead of "all collection, then all detection", we build a **minimal end-to-end
 | **M3 — Enrichment** (wk 7) | GeoIP, AbuseIPDB (cache/quota), risk score | Enriched alerts |
 | **M4 — Dashboard** (wk 8–9) | Auth, login, alert list/detail, map, incidents, MITRE chart (done); optional 2FA and login throttling (done); broader admin RBAC remains | Full analyst workflow |
 | **M5 — Response** (wk 10) | Responder dry-run → enforce, allowlist, TTL, Discord | Attack ⇒ IP blocked in < 5 s |
-| **M6 — Windows + rules** (wk 11) | Windows/Sysmon agent, remaining rules, measurements | real figures |
+| **M6 — Web + rules** (wk 11) | `nginx.access` normalizer and web rules, remaining rules, measurements (the Windows/Sysmon agent was dropped, ADR 40) | real figures |
 | **M7 — Polish** (wk 12) | PDF reports, docs, video, Wazuh comparison | Pro README, 3-minute demo |
 
-> Windows is moved to M6 (instead of weeks 3–4): it is the costliest source to set up; the Linux vertical slice proves the architecture first.
+> The Windows agent was first moved to M6 (the costliest source to set up), then dropped altogether (ADR 40): the platform runs on a Linux VPS and monitors Linux.
 
 ## 15. Risks
 
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Over-engineering the architecture | Nothing shipped | M1 vertical slice before any widening |
-| Windows 11 ARM / Sysmon time sink | Delay | Fallback: export `.evtx` → `python-evtx` to replay logs |
 | False positives → abusive blocks | Legitimate access cut | Dry-run, allowlist, TTL, rate cap |
 | Time-ordering bugs in windows | Missed/duplicate alerts | Windows on event `ts` + replay tests |
 | AbuseIPDB quota (1000 req/day on free tier) | Enrichment blocked | Redis cache (24 h TTL), priority queue, graceful degradation |

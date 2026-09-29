@@ -209,5 +209,5 @@ Things the run also confirmed on a real host:
 ## Not validated yet
 
 - **Path B (UTM) end to end**: the steps above follow the official documentation but were not run.
-- **Windows** target and Sysmon: M6.
+- **Windows** is out of scope (ADR 40): the platform monitors Linux only.
 - A **multi-target** lab and the **response** side (blocking the attacker): M5.
