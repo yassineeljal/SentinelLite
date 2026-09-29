@@ -135,3 +135,25 @@ export interface MFASetup {
   provisioning_uri: string;
   expires_at: string;
 }
+
+export type BlockState = "active" | "expired" | "released";
+
+export interface Block {
+  id: number;
+  ip: string;
+  rule_id: string;
+  reason: string;
+  mode: "dry_run" | "enforce";
+  created_at: string;
+  expires_at: string;
+  released_at: string | null;
+  released_by: string | null;
+  state: BlockState;
+}
+
+export interface AllowlistEntry {
+  cidr: string;
+  note: string;
+  created_by: string;
+  created_at: string;
+}

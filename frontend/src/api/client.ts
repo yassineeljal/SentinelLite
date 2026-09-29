@@ -1,4 +1,6 @@
 import type {
+  AllowlistEntry,
+  Block,
   MFAStatus,
   MFASetup,
   Incident,
@@ -179,5 +181,33 @@ export function disableMfa(password: string, code: string): Promise<void> {
   return request("/v1/auth/2fa/disable", {
     method: "POST",
     body: JSON.stringify({ password, code }),
+  });
+}
+
+export function listBlocks(limit = 100): Promise<Block[]> {
+  return request<Block[]>(`/v1/response/blocks?limit=${limit}`);
+}
+
+export function unblockAddress(address: string): Promise<void> {
+  return request<void>("/v1/response/blocks/unblock", {
+    method: "POST",
+    body: JSON.stringify({ address }),
+  });
+}
+
+export function listAllowlist(): Promise<AllowlistEntry[]> {
+  return request<AllowlistEntry[]>("/v1/response/allowlist");
+}
+
+export function addAllowlist(cidr: string, note: string): Promise<AllowlistEntry> {
+  return request<AllowlistEntry>("/v1/response/allowlist", {
+    method: "POST",
+    body: JSON.stringify({ cidr, note }),
+  });
+}
+
+export function removeAllowlist(cidr: string): Promise<void> {
+  return request<void>(`/v1/response/allowlist?cidr=${encodeURIComponent(cidr)}`, {
+    method: "DELETE",
   });
 }

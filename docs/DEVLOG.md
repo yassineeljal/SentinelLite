@@ -13,6 +13,28 @@ Entry template:
 
 ---
 
+## 2026-09-29 — M5 (step 5) — Blocks page in the dashboard
+
+**What**
+- API `/v1/response`: `GET /blocks` and `GET /allowlist` for any signed-in account; `POST /blocks/unblock`, `POST` and `DELETE /allowlist` for admins only (the first `require_admin`), each change audited as `user:<email>`.
+- Frontend `/blocks` (nav link "Blocks"): blocks table with mode and state, allowlist table, "Unblock" with an explicit confirmation step, "Protect an address" form; read only for analysts (buttons absent, not just disabled).
+- Docs: DASHBOARD.md section "The response API and the Blocks page".
+
+**Why**
+A false positive should be fixable from the same place the operator reads about it, without a shell on the VPS; and the rest of the response (Discord, dry-run figures) now has a face.
+
+**How verified**
+- Backend: 16 new integration tests (every route needs a session; analyst can look but not change and nothing is audited; admin unblock audited under their name; states active/expired/released; input refusals; allowlist add/duplicate/remove with audit). Suite 1151 passed, `ruff`, `mypy --strict` clean.
+- Frontend: 15 new tests (page as admin and as analyst, two-step unblock and Cancel, server error shown, allowlist add/remove, dry-run label, API client encoding of `198.51.100.0/24`); 80 passed, typecheck, lint, format and build clean. Node 22 (the CI version) was installed in a scratch directory for this: the VPS had none.
+
+**Not done yet / limits**
+- Not looked at in a real browser yet: components are tested with jsdom only.
+- No pagination beyond `limit` (100 by default), no per-block detail page, no filter by state.
+
+**Next**: review the dry-run figures then enable `enforce`; look at the page on the VPS.
+
+---
+
 ## 2026-09-29 — M5 (step 4) — Discord notifications
 
 **What**

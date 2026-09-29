@@ -180,13 +180,32 @@ URL. Notes are plain text and immutable. There is no automatic grouping, inciden
 editing, arbitrary-user assignment, pagination beyond the list limit, or full activity audit yet.
 Apply migration `0007` before starting the updated API (the compose `migrate` service does this).
 
+## The response API and the Blocks page
+
+`api/response.py`, prefix `/v1/response`, and the `/blocks` page of the dashboard: what the
+responder blocked (or would block, in dry run), and the allowlist. It is the dashboard face of
+`sentinel blocks`, `sentinel unblock` and `sentinel allowlist`.
+
+| Route | Who | What |
+|---|---|---|
+| `GET /blocks?limit=` | any signed-in account | Recent blocks with a computed `state` (`active`, `expired`, `released`), mode and who released it |
+| `GET /allowlist` | any signed-in account | The database allowlist |
+| `POST /blocks/unblock` `{address}` | **admin** | Releases every active block of the address and queues an `unblock` for the agents that applied it; 404 if nothing is active, 422 for a non-address (a network is refused) |
+| `POST /allowlist` `{cidr, note}` / `DELETE /allowlist?cidr=` | **admin** | 409 if already listed, 404 if absent, 422 for garbage |
+
+This is the first route gated on the `admin` role (`require_admin`, 403 for an analyst); the page
+shows the same data read-only to analysts and hides every button. Each change is written to the
+append-only audit log with the account as actor (`user:<email>`), like the CLI does with `cli`. In
+the UI, lifting a block takes a second, explicit click ("Confirm unblock <address>"). CSRF is
+covered as for every other route by the `SameSite=Strict` session cookie.
+
 ## The frontend
 
 `frontend/` is a small single-page app: a login page, an alert list (auto-refreshing every 15 s,
 filterable by rule id, each row linking to its detail page), an alert detail page (MITRE
 techniques, when/who/where, the risk breakdown with every factor's reason, location and
 reputation, the evidence table), a MITRE ATT&CK coverage page (`/mitre`), and a source-location
-map (`/map`), and incident list/detail pages (`/incidents`, `/incidents/:incidentId`) — behind a
+map (`/map`), incident list/detail pages (`/incidents`, `/incidents/:incidentId`), and the blocks page (`/blocks`) — behind a
 session-aware router (`ProtectedRoute` redirects to
 `/login` when `GET /v1/auth/me` says there is no session). Nothing here is dashboard-specific
 framework code beyond what `api/client.ts` and `auth/AuthContext.tsx` need: no state management
@@ -205,6 +224,6 @@ same checks CI runs.
 ## Not done yet
 
 - The map has no real basemap yet (see above).
-- `role` RBAC beyond account provisioning and shared incident triage (rules, response, agents)
-  arrives with the routes it gates.
+- `role` RBAC covers account provisioning, incident triage and the response (admin only for changes);
+  rules and agents will gain their routes, and their gates, later.
 - Automated browser E2E in CI and a full authentication/activity audit remain future work.
