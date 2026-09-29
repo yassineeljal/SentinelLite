@@ -24,3 +24,65 @@ export interface Alert {
   abuse_score: number | null;
   risk_score: number | null;
 }
+
+export interface EvidenceEvent {
+  ts: string;
+  received_at: string;
+  action: string;
+  user_name: string | null;
+  src_ip: string | null;
+  raw: string;
+}
+
+export interface GeoInfo {
+  country_code: string | null;
+  country: string | null;
+  city: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  asn: number | null;
+  as_org: string | null;
+}
+
+export interface Reputation {
+  source: "abuseipdb";
+  score: number;
+  total_reports: number;
+  distinct_reporters: number;
+  last_reported_at: string | null;
+  usage_type: string | null;
+  isp: string | null;
+  is_tor: boolean;
+  is_whitelisted: boolean;
+  checked_at: string;
+}
+
+export interface Enrichment {
+  ip_scope: "public" | "non_public";
+  geo: GeoInfo | null;
+  reputation: Reputation | null;
+}
+
+export type RiskLevel = "low" | "medium" | "high" | "critical";
+
+export interface RiskFactor {
+  name: string;
+  points: number;
+  reason: string;
+}
+
+export interface RiskAssessment {
+  score: number;
+  level: RiskLevel;
+  factors: RiskFactor[];
+}
+
+export interface AlertDetail {
+  alert: Alert;
+  mitre: string[];
+  group: Record<string, unknown>;
+  evidence: EvidenceEvent[];
+  detection_latency_ms: number | null;
+  enrichment: Enrichment | null;
+  risk: RiskAssessment | null;
+}
