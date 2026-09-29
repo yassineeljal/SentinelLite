@@ -41,6 +41,7 @@ from sentinel_core.db.responses import (
 )
 from sentinel_core.db.session import create_engine, create_sessionmaker
 from sentinel_core.detection.alerts import Alert
+from sentinel_core.notify.discord import DiscordNotifier, block_line, release_line
 from sentinel_core.response.policy import AUDITED_SKIPS, Reason, ResponsePolicy, Verdict, decide
 from sentinel_core.terminal import sanitize
 from sentinel_core.workers.consumer import (
@@ -72,6 +73,7 @@ class ResponderWorker(StreamConsumer):
         batch_size: int = 100,
         claim_idle_ms: int = 60_000,
         release_interval: float = RELEASE_INTERVAL_SECONDS,
+        notifier: DiscordNotifier | None = None,
     ) -> None:
         super().__init__(
             redis,
@@ -86,9 +88,12 @@ class ResponderWorker(StreamConsumer):
         self._policy = policy
         self._mode = mode
         self._release_interval = release_interval
+        self._notifier = notifier
+        self._pending_notes: list[str] = []
         self._next_release = 0.0
 
     async def process_batch(self, entries: list[Entry]) -> None:
+        self._pending_notes.clear()  # a retried batch (after an error) starts clean
         alerts: list[Alert] = []
         for entry_id, fields in entries:
             if fields is None:  # entry deleted while still pending
@@ -122,6 +127,9 @@ class ResponderWorker(StreamConsumer):
                 skipped += 1
                 if decision.reason in AUDITED_SKIPS:
                     await self._audit_skip(session, alert, decision.reason)
+        await (
+            self._flush_notes()
+        )  # after the commit: never announce a decision that was rolled back
         logger.info("batch: %d block(s) recorded, %d alert(s) not blocked", blocked, skipped)
 
     async def _already_blocked(self, session: AsyncSession, address: str, now: datetime) -> bool:
@@ -164,6 +172,16 @@ class ResponderWorker(StreamConsumer):
                 "ttl_seconds": self._policy.ttl_seconds,
                 "agents": queued,
             },
+        )
+        self._pending_notes.append(
+            block_line(
+                address=address,
+                mode=self._mode,
+                rule_id=alert.rule_id,
+                match_count=alert.match_count,
+                severity=alert.severity,
+                ttl_seconds=self._policy.ttl_seconds,
+            )
         )
         logger.warning(
             "%s %s for %ds (%s, alert %s)",
@@ -209,7 +227,14 @@ class ResponderWorker(StreamConsumer):
         async with self._sessions.begin() as session:
             for block in await release_expired_blocks(session, datetime.now(UTC), ACTOR):
                 await record_audit(session, ACTOR, "unblock", block.ip, {"block_id": block.id})
+                self._pending_notes.append(release_line(address=block.ip))
                 logger.info("released %s (block %d expired)", block.ip, block.id)
+        await self._flush_notes()
+
+    async def _flush_notes(self) -> None:
+        notes, self._pending_notes = self._pending_notes, []
+        if notes and self._notifier is not None:
+            await self._notifier.send(notes)
 
     async def _audit_skip(self, session: AsyncSession, alert: Alert, reason: Reason) -> None:
         # Untrusted text (the address may be malformed) is cut and sanitised before it is stored.
@@ -249,6 +274,14 @@ async def amain() -> int:
         len(policy.allowlist),
         "y" if len(policy.allowlist) == 1 else "ies",
     )
+    notifier: DiscordNotifier | None = None
+    if settings.discord_webhook_url is not None:
+        try:
+            notifier = DiscordNotifier(settings.discord_webhook_url.get_secret_value())
+        except ValueError as exc:  # the message never contains the URL
+            logger.error("invalid SENTINEL_DISCORD_WEBHOOK_URL: %s", exc)
+            return 1
+        logger.info("Discord notifications on")
     redis = build_redis(settings.redis_url)
     engine = create_engine(settings)
     worker = ResponderWorker(
@@ -259,12 +292,15 @@ async def amain() -> int:
         consumer=f"{socket.gethostname()}-{os.getpid()}",
         batch_size=settings.responder_batch_size,
         claim_idle_ms=settings.responder_claim_idle_ms,
+        notifier=notifier,
     )
     stop = asyncio.Event()
     install_stop_signals(stop)
     try:
         await worker.run(stop)
     finally:
+        if notifier is not None:
+            await notifier.aclose()
         await redis.aclose()
         await engine.dispose()
     return 0

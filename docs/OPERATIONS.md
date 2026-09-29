@@ -318,6 +318,14 @@ docker compose exec api sentinel allowlist remove 203.0.113.7
 Put your own address on the allowlist **before** anything can enforce: `who` on the VPS shows the
 address of your SSH session.
 
+**Discord notifications.** With `SENTINEL_DISCORD_WEBHOOK_URL` set (a Discord webhook: server
+settings > Integrations > Webhooks), the responder posts one message per batch: `BLOCKED` (or
+`would block` in dry run) with the address, TTL, rule and severity, and `RELEASED` when a block
+expires. It is best effort: a Discord outage never delays or cancels a block, messages are sent after
+the decision is committed, a redelivered alert is not announced twice, a burst is cut at 10 lines,
+and mentions are disabled. The URL is validated at startup (only `https://discord.com/api/webhooks/…`),
+never logged, and the `httpx` request log (which would print it) is silenced.
+
 **A false positive.** `sentinel unblock <address>` releases every active block of that address, queues
 an `unblock` for the agents that applied it (they drop the rule at their next poll, a few seconds
 later) and writes `unblock.manual` to the audit log. It does not stop the address from being blocked

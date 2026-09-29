@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 from redis.asyncio import Redis
@@ -19,6 +20,7 @@ from sentinel_core.bus.alerts_stream import RedisAlertPublisher
 from sentinel_core.config import Settings
 from sentinel_core.db.events import ensure_event_partitions
 from sentinel_core.detection.alerts import Alert
+from sentinel_core.notify.discord import DiscordNotifier
 from sentinel_core.response.policy import ResponsePolicy
 from sentinel_core.workers.responder import ResponderWorker
 from tests.support import DATABASE_URL, REDIS_URL, InMemoryPublisher
@@ -301,3 +303,61 @@ async def test_unblocking_a_dry_run_block_queues_nothing(
 
     assert await unblock(platform, ATTACKER) == 0
     assert await platform.rows("SELECT 1 FROM agent_actions") == []
+
+
+class Discord:
+    """A Discord that records what it is sent."""
+
+    def __init__(self, status: int = 204) -> None:
+        self.posts: list[str] = []
+        self.status = status
+        self.notifier = DiscordNotifier(
+            "https://discord.com/api/webhooks/1/token",
+            httpx.AsyncClient(transport=httpx.MockTransport(self._handle)),
+        )
+
+    def _handle(self, request: httpx.Request) -> httpx.Response:
+        import json
+
+        self.posts.append(json.loads(request.content)["content"])
+        return httpx.Response(self.status)
+
+
+async def test_a_block_and_its_release_are_announced_on_discord(platform: Platform) -> None:
+    discord = Discord()
+    platform.worker._notifier = discord.notifier
+    agent, _ = await platform.agent()
+
+    await platform.alert(await platform.event(agent))
+    async with platform.engine.begin() as conn:
+        await conn.execute(text("UPDATE blocked_ips SET expires_at = now() - interval '1 second'"))
+    await platform.worker.on_tick()
+
+    assert len(discord.posts) == 2
+    assert "BLOCKED" in discord.posts[0] and ATTACKER in discord.posts[0]
+    assert "RELEASED" in discord.posts[1] and ATTACKER in discord.posts[1]
+
+
+async def test_a_redelivered_alert_is_not_announced_twice(platform: Platform) -> None:
+    discord = Discord()
+    platform.worker._notifier = discord.notifier
+    agent, _ = await platform.agent()
+    event_id = await platform.event(agent)
+
+    await platform.alert(event_id)
+    await platform.publisher.publish([make_alert()])  # another alert, same address: already blocked
+    while await platform.worker.run_once():
+        pass
+
+    assert len(discord.posts) == 1
+
+
+async def test_discord_being_down_never_stops_the_response(platform: Platform) -> None:
+    platform.worker._notifier = Discord(status=500).notifier
+    agent, auth = await platform.agent()
+
+    await platform.alert(await platform.event(agent))
+
+    assert len(await platform.rows("SELECT 1 FROM blocked_ips")) == 1
+    fetched = (await platform.client.get("/v1/agents/me/actions", headers=auth)).json()
+    assert [a["kind"] for a in fetched["actions"]] == ["block"]
