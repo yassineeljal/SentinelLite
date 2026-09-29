@@ -26,7 +26,9 @@ def upgrade() -> None:
         sa.Column("rule_id", sa.String(64), nullable=False),
         sa.Column("reason", sa.Text(), nullable=False),
         sa.Column("mode", sa.String(16), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("released_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("released_by", sa.String(128), nullable=True),
@@ -43,7 +45,9 @@ def upgrade() -> None:
         sa.Column("cidr", postgresql.CIDR(), nullable=False),
         sa.Column("note", sa.Text(), server_default="", nullable=False),
         sa.Column("created_by", sa.String(128), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_allowlist")),
         sa.UniqueConstraint("cidr", name=op.f("uq_allowlist_cidr")),
     )
@@ -55,7 +59,9 @@ def upgrade() -> None:
         sa.Column("actor", sa.String(128), nullable=False),
         sa.Column("action", sa.String(64), nullable=False),
         sa.Column("target", sa.String(128), nullable=False),
-        sa.Column("details", postgresql.JSONB(), server_default=sa.text("'{}'::jsonb"), nullable=False),
+        sa.Column(
+            "details", postgresql.JSONB(), server_default=sa.text("'{}'::jsonb"), nullable=False
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_audit_log")),
     )
     op.create_index("ix_audit_log_ts", "audit_log", ["ts"])
