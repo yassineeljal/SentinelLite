@@ -23,7 +23,9 @@ class Settings(BaseSettings):
     # every guardrail of response/policy.py, whether the source address would be blocked.
     responder_enabled: bool = False
     # Comma-separated rule ids whose alerts may block: sweeps and guessing, never successful logins.
-    responder_block_rules: str = "ssh-bruteforce,ssh-user-enumeration,ssh-invalid-user-flood"
+    responder_block_rules: str = (
+        "ssh-bruteforce,ssh-user-enumeration,ssh-invalid-user-flood,ssh-slow-scan"
+    )
     responder_min_severity: int = Field(default=40, ge=0, le=100)
     responder_ttl_seconds: int = Field(default=3600, gt=0, le=MAX_TTL_SECONDS)
     responder_max_blocks_per_minute: int = Field(default=10, ge=1)

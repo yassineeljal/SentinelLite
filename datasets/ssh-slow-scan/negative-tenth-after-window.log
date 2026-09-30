@@ -1,0 +1,12 @@
+# expect: 0
+# description: Nine attempts in the first 55 minutes, the tenth 61 minutes after the first: the first has left the window.
+2026-09-29T13:00:00+00:00 prod-web-01 sshd[6202]: Invalid user admin from 203.0.113.73 port 34402
+2026-09-29T13:06:52+00:00 prod-web-01 sshd[6051]: Invalid user ubuntu from 203.0.113.73 port 48651
+2026-09-29T13:13:45+00:00 prod-web-01 sshd[6567]: Invalid user test from 203.0.113.73 port 32067
+2026-09-29T13:20:37+00:00 prod-web-01 sshd[6558]: Invalid user oracle from 203.0.113.73 port 38358
+2026-09-29T13:27:30+00:00 prod-web-01 sshd[6563]: Invalid user postgres from 203.0.113.73 port 33863
+2026-09-29T13:34:22+00:00 prod-web-01 sshd[6334]: Invalid user user from 203.0.113.73 port 46234
+2026-09-29T13:41:15+00:00 prod-web-01 sshd[6628]: Invalid user git from 203.0.113.73 port 44728
+2026-09-29T13:48:07+00:00 prod-web-01 sshd[6474]: Invalid user ftp from 203.0.113.73 port 45474
+2026-09-29T13:55:00+00:00 prod-web-01 sshd[6139]: Invalid user admin from 203.0.113.73 port 42439
+2026-09-29T14:01:00+00:00 prod-web-01 sshd[6400]: Invalid user admin from 203.0.113.73 port 31000

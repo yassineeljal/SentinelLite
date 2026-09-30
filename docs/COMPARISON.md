@@ -20,7 +20,7 @@ be hard to misuse. It is a portfolio-grade, running system, not a replacement fo
 | | SentinelLite | Wazuh (as publicly documented) |
 |---|---|---|
 | Size | About 12,500 lines (8,800 Python backend, 1,600 Python agent with no dependency, 2,100 TypeScript) | A large, mature product with many components and integrations |
-| Detection content | 15 rules, each with labelled attack, benign and near-miss scenarios; CI fails if the benchmark drifts | A large ready-made rule and decoder set, maintained by a company and a community |
+| Detection content | 16 rules, each with labelled attack, benign and near-miss scenarios; CI fails if the benchmark drifts | A large ready-made rule and decoder set, maintained by a company and a community |
 | Rule format | Strict YAML, an unknown key refuses to load; compared values only, path classes decided in code | XML decoders and rules, very expressive |
 | Measurability | Detection rate, false alerts on a benign corpus, and latency are reproducible with one command (`sentinel bench`) | Not assessed here |
 | Response | Pull-based: the host's enforcer fetches an action, re-validates the address, applies it, lifts it by itself; dry run by default; audit log append-only | Active response scripts run by the agent on manager instruction |

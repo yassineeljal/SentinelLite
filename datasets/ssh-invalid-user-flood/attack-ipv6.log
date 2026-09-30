@@ -1,4 +1,5 @@
 # expect: 1
+# also: ssh-slow-scan=1
 # description: IPv6 source.
 2026-09-29T10:00:00+00:00 prod-web-01 sshd[9800]: Invalid user admin from 2001:db8::7 port 46000
 2026-09-29T10:00:03+00:00 prod-web-01 sshd[9803]: Invalid user admin from 2001:db8::7 port 46003

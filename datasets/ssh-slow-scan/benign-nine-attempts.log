@@ -1,0 +1,11 @@
+# expect: 0
+# description: Nine attempts in an hour: one below the threshold.
+2026-09-29T13:00:00+00:00 prod-web-01 sshd[6202]: Invalid user admin from 203.0.113.71 port 34402
+2026-09-29T13:07:15+00:00 prod-web-01 sshd[6051]: Invalid user ubuntu from 203.0.113.71 port 48651
+2026-09-29T13:14:30+00:00 prod-web-01 sshd[6567]: Invalid user test from 203.0.113.71 port 32067
+2026-09-29T13:21:45+00:00 prod-web-01 sshd[6558]: Invalid user oracle from 203.0.113.71 port 38358
+2026-09-29T13:29:00+00:00 prod-web-01 sshd[6563]: Invalid user postgres from 203.0.113.71 port 33863
+2026-09-29T13:36:15+00:00 prod-web-01 sshd[6334]: Invalid user user from 203.0.113.71 port 46234
+2026-09-29T13:43:30+00:00 prod-web-01 sshd[6628]: Invalid user git from 203.0.113.71 port 44728
+2026-09-29T13:50:45+00:00 prod-web-01 sshd[6474]: Invalid user ftp from 203.0.113.71 port 45474
+2026-09-29T13:58:00+00:00 prod-web-01 sshd[6139]: Invalid user admin from 203.0.113.71 port 42439

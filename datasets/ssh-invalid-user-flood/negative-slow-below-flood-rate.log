@@ -1,5 +1,6 @@
 # expect: 0
-# description: One attempt every ten seconds for four minutes never reaches ten in a minute.
+# also: ssh-slow-scan=1
+# description: One attempt every ten seconds for four minutes never reaches ten in a minute (so no flood), yet it is a slow scan: ssh-slow-scan fires.
 2026-09-29T10:00:00+00:00 prod-web-01 sshd[6100]: Invalid user test from 203.0.113.21 port 41000
 2026-09-29T10:00:10+00:00 prod-web-01 sshd[6103]: Invalid user test from 203.0.113.21 port 41003
 2026-09-29T10:00:20+00:00 prod-web-01 sshd[6106]: Invalid user test from 203.0.113.21 port 41006
