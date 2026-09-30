@@ -1,0 +1,20 @@
+id: ssh-slow-scan
+title: Slow SSH probing with unknown user names
+description: >
+  Ten or more `Invalid user` attempts from the same source IP within one hour, however slowly.
+  Written from the live VPS: the scanners that hit it were patient (18 attempts over 61 minutes, 13
+  over 46) and never came near the ten-a-minute of ssh-invalid-user-flood, so nothing fired all day.
+  A fast attack also counts here, so this rule fires alongside ssh-invalid-user-flood on it: two alerts
+  for one source, by design (the responder still blocks the address once). One alert per source per
+  hour. Blind spot: a source staying under ten attempts an hour, or spreading them over many addresses.
+mitre: [T1110]
+severity: 40
+type: threshold
+match:
+  source: linux.auth
+  action: invalid_user
+group_by: [src_ip]
+threshold:
+  count: 10
+  window: 1h
+cooldown: 1h

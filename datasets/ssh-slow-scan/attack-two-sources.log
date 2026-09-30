@@ -1,0 +1,25 @@
+# expect: 2
+# description: Two patient scanners, counted separately.
+2026-09-29T13:00:00+00:00 prod-web-01 sshd[6353]: Invalid user admin from 203.0.113.65 port 31853
+2026-09-29T13:00:30+00:00 prod-web-01 sshd[6897]: Invalid user admin from 203.0.113.66 port 37797
+2026-09-29T13:05:00+00:00 prod-web-01 sshd[6601]: Invalid user ubuntu from 203.0.113.65 port 33001
+2026-09-29T13:05:30+00:00 prod-web-01 sshd[6819]: Invalid user ubuntu from 203.0.113.66 port 49419
+2026-09-29T13:10:00+00:00 prod-web-01 sshd[6381]: Invalid user test from 203.0.113.65 port 32781
+2026-09-29T13:10:30+00:00 prod-web-01 sshd[6133]: Invalid user test from 203.0.113.66 port 47833
+2026-09-29T13:15:00+00:00 prod-web-01 sshd[6431]: Invalid user oracle from 203.0.113.65 port 41831
+2026-09-29T13:15:30+00:00 prod-web-01 sshd[6073]: Invalid user oracle from 203.0.113.66 port 34273
+2026-09-29T13:20:00+00:00 prod-web-01 sshd[6440]: Invalid user postgres from 203.0.113.65 port 35540
+2026-09-29T13:20:30+00:00 prod-web-01 sshd[6722]: Invalid user postgres from 203.0.113.66 port 42122
+2026-09-29T13:25:00+00:00 prod-web-01 sshd[6497]: Invalid user user from 203.0.113.65 port 40097
+2026-09-29T13:25:30+00:00 prod-web-01 sshd[6289]: Invalid user user from 203.0.113.66 port 49789
+2026-09-29T13:30:00+00:00 prod-web-01 sshd[6443]: Invalid user git from 203.0.113.65 port 38243
+2026-09-29T13:30:30+00:00 prod-web-01 sshd[6533]: Invalid user git from 203.0.113.66 port 45533
+2026-09-29T13:35:00+00:00 prod-web-01 sshd[6355]: Invalid user ftp from 203.0.113.65 port 49855
+2026-09-29T13:35:30+00:00 prod-web-01 sshd[6433]: Invalid user ftp from 203.0.113.66 port 49033
+2026-09-29T13:40:00+00:00 prod-web-01 sshd[6053]: Invalid user admin from 203.0.113.65 port 36953
+2026-09-29T13:40:30+00:00 prod-web-01 sshd[6647]: Invalid user admin from 203.0.113.66 port 32147
+2026-09-29T13:45:00+00:00 prod-web-01 sshd[6383]: Invalid user ubuntu from 203.0.113.65 port 49883
+2026-09-29T13:45:30+00:00 prod-web-01 sshd[6344]: Invalid user ubuntu from 203.0.113.66 port 49844
+2026-09-29T13:50:00+00:00 prod-web-01 sshd[6570]: Invalid user test from 203.0.113.65 port 31170
+2026-09-29T13:50:30+00:00 prod-web-01 sshd[6731]: Invalid user test from 203.0.113.66 port 30431
+2026-09-29T13:55:30+00:00 prod-web-01 sshd[6375]: Invalid user oracle from 203.0.113.66 port 45375

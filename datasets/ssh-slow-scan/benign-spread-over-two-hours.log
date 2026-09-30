@@ -1,0 +1,14 @@
+# expect: 0
+# description: Twelve attempts over two hours never put ten in the same hour.
+2026-09-29T13:00:00+00:00 prod-web-01 sshd[6202]: Invalid user admin from 203.0.113.72 port 34402
+2026-09-29T13:11:21+00:00 prod-web-01 sshd[6051]: Invalid user ubuntu from 203.0.113.72 port 48651
+2026-09-29T13:22:43+00:00 prod-web-01 sshd[6567]: Invalid user test from 203.0.113.72 port 32067
+2026-09-29T13:34:05+00:00 prod-web-01 sshd[6558]: Invalid user oracle from 203.0.113.72 port 38358
+2026-09-29T13:45:27+00:00 prod-web-01 sshd[6563]: Invalid user postgres from 203.0.113.72 port 33863
+2026-09-29T13:56:49+00:00 prod-web-01 sshd[6334]: Invalid user user from 203.0.113.72 port 46234
+2026-09-29T14:08:10+00:00 prod-web-01 sshd[6628]: Invalid user git from 203.0.113.72 port 44728
+2026-09-29T14:19:32+00:00 prod-web-01 sshd[6474]: Invalid user ftp from 203.0.113.72 port 45474
+2026-09-29T14:30:54+00:00 prod-web-01 sshd[6139]: Invalid user admin from 203.0.113.72 port 42439
+2026-09-29T14:42:16+00:00 prod-web-01 sshd[6879]: Invalid user ubuntu from 203.0.113.72 port 36879
+2026-09-29T14:53:38+00:00 prod-web-01 sshd[6675]: Invalid user test from 203.0.113.72 port 33075
+2026-09-29T15:05:00+00:00 prod-web-01 sshd[6086]: Invalid user oracle from 203.0.113.72 port 45986

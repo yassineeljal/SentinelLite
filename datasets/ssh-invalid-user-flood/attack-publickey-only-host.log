@@ -1,4 +1,5 @@
 # expect: 1
+# also: ssh-slow-scan=1
 # description: Ten probes of one name, each followed by the preauth disconnect sshd logs when passwords are off.
 2026-09-29T10:00:00+00:00 prod-web-01 sshd[6100]: Invalid user admin from 203.0.113.11 port 41000
 2026-09-29T10:00:00+00:00 prod-web-01 sshd[6100]: Connection closed by invalid user admin 203.0.113.11 port 41000 [preauth]

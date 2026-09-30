@@ -51,7 +51,7 @@ def test_a_scan_from_a_public_address_is_blocked() -> None:
 
 @pytest.mark.parametrize(
     "rule_id",
-    ["ssh-bruteforce", "ssh-user-enumeration", "ssh-invalid-user-flood"],
+    ["ssh-bruteforce", "ssh-user-enumeration", "ssh-invalid-user-flood", "ssh-slow-scan"],
 )
 def test_the_default_blocking_rules(rule_id: str) -> None:
     assert decide(alert(rule_id=rule_id), POLICY).verdict is Verdict.BLOCK
@@ -186,3 +186,18 @@ def test_only_guardrail_refusals_are_audited() -> None:
     assert Reason.ALLOWLISTED in AUDITED_SKIPS
     assert Reason.RATE_LIMITED in AUDITED_SKIPS
     assert Reason.RULE_NOT_ELIGIBLE not in AUDITED_SKIPS
+
+
+def test_every_default_blocking_rule_exists_and_can_reach_the_severity_floor() -> None:
+    """A typo in the list (or a rule renamed, or one whose severity sits under the floor) would
+    silently make an attack unblockable: check the list against the shipped rules."""
+    from pathlib import Path
+
+    from sentinel_core.detection.rules import load_rules
+
+    rules = {rule.id: rule for rule in load_rules(Path(__file__).resolve().parents[3] / "rules")}
+
+    for rule_id in POLICY.block_rules:
+        assert rule_id in rules, f"{rule_id} is a blocking rule but no such rule is shipped"
+        assert rules[rule_id].severity >= POLICY.min_severity, f"{rule_id} is below the floor"
+        assert rules[rule_id].enabled

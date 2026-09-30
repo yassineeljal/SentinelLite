@@ -15,11 +15,11 @@ monitors the public VPS it is hosted on, and a real block was applied and lifted
 
 | | |
 |---|---|
-| Detection rules | **15** (ATT&CK-mapped: T1110, T1078, T1136, T1098, T1548, T1087, T1595) |
-| Attack scenarios detected | **61 / 61** |
-| Scenarios matching their exact expected alert count | **108 / 108** |
-| False alerts on 933 replayed benign events | **0** |
-| Automated tests | **1 296** backend (real Redis and PostgreSQL in CI) + **173** agent + **80** frontend; `mypy --strict`, `ruff` |
+| Detection rules | **16** (ATT&CK-mapped: T1110, T1078, T1136, T1098, T1548, T1087, T1595) |
+| Attack scenarios detected | **67 / 67** |
+| Scenarios matching their exact expected alert count | **118 / 118** |
+| False alerts on 1 050 replayed benign events | **0** |
+| Automated tests | **1 328** backend (real Redis and PostgreSQL in CI) + **173** agent + **80** frontend; `mypy --strict`, `ruff` |
 | Attack → alert latency, SSH (real `hydra` → `sshd` → agent → alert) | **7.4 s** |
 | Attack → alert latency, web (probe sweep on the live VPS) | **< 0.4 s** after the event reaches the platform |
 

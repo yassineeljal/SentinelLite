@@ -1,4 +1,5 @@
 # expect: 1
+# also: ssh-slow-scan=1
 # description: One name tried twelve times in 22 seconds.
 2026-09-29T10:00:00+00:00 prod-web-01 sshd[6100]: Invalid user admin from 203.0.113.10 port 41000
 2026-09-29T10:00:02+00:00 prod-web-01 sshd[6103]: Invalid user admin from 203.0.113.10 port 41003

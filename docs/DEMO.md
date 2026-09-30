@@ -11,7 +11,7 @@ Discord channel next to it.
 
 "A small SIEM for Linux servers. Agents ship logs, the server normalizes and detects, everything is mapped
 to MITRE ATT&CK, and there is a guarded automatic response. It monitors the server it runs on."
-Show the README's numbers table: 15 rules, 61/61 attacks, 0 false alerts on 933 benign events, and the
+Show the README's numbers table: 16 rules, 67/67 attacks, 0 false alerts on 1 050 benign events, and the
 fact that CI fails if that drifts.
 
 ## 0:20 — A scanner arrives (60 s)

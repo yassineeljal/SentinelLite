@@ -53,7 +53,7 @@ class ResponsePolicy:
     # Only sweeps and guessing block: an alert about a SUCCESSFUL login (or a new account) is a
     # lead for an analyst, and blocking its source could cut a legitimate user off.
     block_rules: frozenset[str] = frozenset(
-        {"ssh-bruteforce", "ssh-user-enumeration", "ssh-invalid-user-flood"}
+        {"ssh-bruteforce", "ssh-user-enumeration", "ssh-invalid-user-flood", "ssh-slow-scan"}
     )
     min_severity: int = 40
     ttl_seconds: int = 3600

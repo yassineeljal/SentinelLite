@@ -13,6 +13,32 @@ Entry template:
 
 ---
 
+## 2026-09-30 — Detection — `ssh-slow-scan`, a rule born from the first day of real data
+
+**What**
+- Rule `ssh-slow-scan`: ≥ 10 `Invalid user` attempts from one source in one hour (cooldown 1 h, severity 40, T1110), 10 scenarios (two of them modelled on the real scanners: 18 attempts over 61 minutes, 13 over 46). It is in the responder's default blocking rules, still `dry_run`.
+- The benign scenario `ssh-invalid-user-flood/benign-slow` (24 attempts in 4 minutes) was in fact a slow scan: it became `negative-slow-below-flood-rate` (the flood rule must not fire, the new one does). Ten scenarios of other rules declare the legitimate `# also: ssh-slow-scan=N` (a fast attack is also ten in an hour).
+- A consistency test: every default blocking rule must exist, be enabled and have a severity above the floor.
+
+**Why**
+The M7 report over the first day of production showed 52 `Invalid user` attempts from 15 addresses and not a single alert, so the responder had nothing to decide and the dry run nothing to review. The scanners were patient: 18 attempts over an hour is far from ten a minute.
+
+**How verified**
+- Benchmark: 16 rules, 67/67 attacks, 118/118 exact alert counts, 0 false alerts on 1 050 benign events (the shared normal day stays silent). 1328 backend tests, `ruff`, `mypy --strict` clean.
+
+**Problems & lessons**
+- Two alerts for a fast scanner (flood and slow-scan) is the price of not being able to say "fast" in a rule; the responder still records one block per address.
+- My first expectation for the three-hour scenario was wrong (two alerts); three is the correct behaviour of a one-hour cooldown. The dataset was fixed, not the engine.
+- The threshold is a judgement from two real observations, which is thin: watch the false-alert rate before trusting it with `enforce`.
+
+**Not done yet / limits**
+- A source staying under ten attempts an hour, or spread over many addresses, is still invisible.
+- The real scanners already in the database are not replayed (a replay would send stale "would block" messages to Discord).
+
+**Next**: watch what the rule finds, then decide on `enforce`.
+
+---
+
 ## 2026-09-30 — M7 — Polish: report, README, demo, Wazuh comparison
 
 **What**

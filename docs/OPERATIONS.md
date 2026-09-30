@@ -377,7 +377,7 @@ docker compose exec api sentinel allowlist remove 203.0.113.7
 
 | Guardrail | Behaviour |
 |---|---|
-| Eligible rules | Only `ssh-bruteforce`, `ssh-user-enumeration`, `ssh-invalid-user-flood` (`SENTINEL_RESPONDER_BLOCK_RULES`). Alerts about a **successful** login or a new account never block: the source may be a legitimate user |
+| Eligible rules | Only `ssh-bruteforce`, `ssh-user-enumeration`, `ssh-invalid-user-flood`, `ssh-slow-scan` (`SENTINEL_RESPONDER_BLOCK_RULES`). Alerts about a **successful** login or a new account never block: the source may be a legitimate user |
 | Severity floor | `SENTINEL_RESPONDER_MIN_SEVERITY` (default 40) |
 | Non-public addresses | Private, loopback, link-local, multicast, reserved and documentation ranges are never blocked, including when wrapped as `::ffff:a.b.c.d` |
 | Allowlist | `SENTINEL_RESPONDER_ALLOWLIST` plus the database allowlist (`sentinel allowlist`). It wins over everything; an IPv4-mapped IPv6 form of an allowed address is allowed too |
