@@ -71,11 +71,11 @@ if [ "$uninstall" -eq 1 ]; then
     systemctl disable --now sentinel-agent 2>/dev/null || true
   fi
   rm -f "$UNIT"
-  [ -d /run/systemd/system ] && systemctl daemon-reload
+  if [ -d /run/systemd/system ]; then systemctl daemon-reload; fi
   rm -rf "$PREFIX"
   if [ "$purge" -eq 1 ]; then
     rm -rf "$CONF_DIR" "$STATE_DIR"
-    id -u "$ACCOUNT" >/dev/null 2>&1 && userdel "$ACCOUNT" 2>/dev/null || true
+    if id -u "$ACCOUNT" >/dev/null 2>&1; then userdel "$ACCOUNT" 2>/dev/null || true; fi
     info "agent, configuration, key, state and account removed"
   else
     info "agent removed (the configuration in $CONF_DIR was kept; add --purge to remove it)"
