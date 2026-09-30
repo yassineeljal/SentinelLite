@@ -13,6 +13,25 @@ Entry template:
 
 ---
 
+## 2026-09-30 — Docs — A shorter README
+
+**What**
+- The README went from 236 to about 140 lines: a three-sentence pitch with three differentiators, a five-box diagram, the benchmark numbers only, a compact Get started, "What you can do", a documentation map, a five-question FAQ, status and limits, and the licence note at the end.
+- Nothing was deleted: the detailed feature descriptions and the full 20-node diagram moved to `docs/FEATURES.md`, the engineering stories to `docs/ENGINEERING_NOTES.md`.
+- Exact test counts left the README (they changed with almost every PR and had to be corrected each time): "over 1 600 automated tests".
+
+**Why**
+A reader who opened the README hit a wall of jargon (atomic Lua script, IPv4-mapped IPv6, ADR numbers) before learning what the tool does.
+
+**How verified**
+- Every relative link and anchor in the README and the new pages was checked by script, and it caught a real slip: links moved from the README kept their `docs/` prefix, wrong from inside `docs/`.
+
+**Not done yet / limits**
+- No screenshot: nothing on the server can take one, and it is the most persuasive thing a security tool's README can have. Drop images in `docs/img/` and link them from the top of the README.
+- The licence is still undecided, which blocks making the repository public.
+
+---
+
 ## 2026-09-30 — Frontend — Visual redesign (and how it slipped into `main`)
 
 **What**
