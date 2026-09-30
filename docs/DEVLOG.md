@@ -35,9 +35,11 @@ Nobody could use the project without cloning it, building an image for several m
 
 **Not done yet / limits**
 - The installer is verified on Ubuntu 24.04 only, and installs the agent, not the firewall enforcer.
-- The first tagged release, and the check that a stranger can pull the image, come after this merge.
+- The package is private (the repository is): a stranger needs `docker login ghcr.io` until it is made public.
 
-**Next**: tag `v0.1.0`, watch the release workflow, make the package public when the repository is.
+**Release `v0.1.0`** (same day, after the merge): the workflow took about five minutes and pushed `0.1.0`, `0.1` and `latest`. Checked as a user would: a login with a temporary Docker config (no token left on the server), the manifest lists `linux/amd64` and `linux/arm64` (plus two attestation entries), a `pull` gives 336 MB containing `/app/agent-dist` (installer and wheel), `sentinel_core 0.1.0` and the built dashboard. The one-command installer was then run **against the production platform over HTTPS** in a fresh Ubuntu 24.04 with systemd, with a real test agent key: the agent appeared on the platform (`last seen`) at start, and was then purged and revoked. Two more slips on the way, both caught by machines: the CI's newer `shellcheck` flagged an `A && B || C` pattern my local version let through, and a first push was refused because the token lacked the `workflow` scope (needed to touch `.github/workflows`).
+
+**Next**: make the package public together with the repository, then choose a licence.
 
 ---
 

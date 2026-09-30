@@ -424,7 +424,7 @@ The platform is one image (`ghcr.io/<owner>/sentinellite`) for every service; on
 - by hand (Actions > Release images > Run workflow): `edge`, to try a branch.
 
 Users run it with `docker compose -f docker-compose.yml -f docker-compose.images.yml up -d`
-(`SENTINEL_VERSION=v0.1.0` in `.env` pins a release, `SENTINEL_IMAGE` points at a mirror). The overlay
+(`SENTINEL_VERSION=0.1.0` in `.env` pins a release, `SENTINEL_IMAGE` points at a mirror). The overlay
 sets `pull_policy: always` and drops the `build:` section, so nothing is compiled on the user's machine.
 The image also carries the agent wheel and its installer, served by the API under `/agent`
 (`curl https://SIEM/agent/install.sh | sudo bash -s -- --server https://SIEM --key KEY`); they are public

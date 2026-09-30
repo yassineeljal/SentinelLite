@@ -101,8 +101,8 @@ curl http://127.0.0.1:8000/healthz # {"status":"ok","version":"0.1.0"}
 ```
 
 The published image is `ghcr.io/yassineeljal/sentinellite` (amd64 and arm64), one image for every service; pin
-a release with `SENTINEL_VERSION=v0.1.0` in `.env`. It exists once a version has been tagged: while the
-repository or package is private you first need `docker login ghcr.io`.
+a release with `SENTINEL_VERSION=0.1.0` in `.env` (release tags are `0.1.0`, `0.1` and `latest`). While the
+repository and its package are private you first need `docker login ghcr.io`.
 
 By design the API is published on `127.0.0.1:8000` only. **Never set `SENTINEL_BIND_ADDR` to `0.0.0.0`**:
 that would put your SIEM on the network without HTTPS. To reach it from elsewhere, put a reverse proxy
