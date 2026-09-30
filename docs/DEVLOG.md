@@ -13,6 +13,29 @@ Entry template:
 
 ---
 
+## 2026-09-30 — Operations — GeoIP enabled on the VPS
+
+**What**
+- `deploy/fetch-geoip.sh` (DB-IP Lite city and ASN, 2026-09), `SENTINEL_ENRICHMENT_ENABLED=true` and the `enrichment` profile in the VPS `.env`, `enricher` service running. AbuseIPDB stays off: no address leaves the server.
+
+**Why**
+The M7 report showed every country as "unknown".
+
+**How verified**
+- A probe sweep produced a `web-path-probing` alert that was enriched within seconds; while testing, a real scanner from Hungary (`80.94.95.211`, Budapest) hit the site and its alert came out enriched too (country, city, risk 40). The report now lists countries.
+
+**Problems & lessons**
+- `deploy/geoip/` had been created by Docker (a bind-mount target) and was owned by root, so the fetch script, run as a normal user, could not write into it: `chown` first. Creating a directory before Docker does avoids it.
+- Only new alerts are enriched: the ones raised before the switch keep "unknown".
+
+**Not done yet / limits**
+- The DB-IP files are monthly and nothing refreshes them: re-run `deploy/fetch-geoip.sh` from time to time.
+- Alerts from before the switch are not back-filled.
+
+**Next**: watch the dry-run blocks, then decide on `enforce`.
+
+---
+
 ## 2026-09-30 — Detection — `ssh-slow-scan`, a rule born from the first day of real data
 
 **What**
