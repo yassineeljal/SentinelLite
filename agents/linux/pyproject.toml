@@ -18,6 +18,13 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/sentinel_agent"]
 
+# The unit files and the example configuration ship inside the wheel: the installer reads them from
+# the installed package, so the version of the units always matches the version of the agent.
+[tool.hatch.build.targets.wheel.force-include]
+"deploy/sentinel-agent.service" = "sentinel_agent/data/sentinel-agent.service"
+"deploy/sentinel-agent-enforcer.service" = "sentinel_agent/data/sentinel-agent-enforcer.service"
+"deploy/agent.toml.example" = "sentinel_agent/data/agent.toml.example"
+
 [dependency-groups]
 dev = [
     "mypy>=2.3.1",

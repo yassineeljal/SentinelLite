@@ -415,6 +415,43 @@ its TTL).
 4. To undo everything at once: `SENTINEL_RESPONDER_MODE=dry_run`, and on the hosts stop the enforcer
    and run `iptables -F SENTINEL` (blocks that were queued are then never re-applied).
 
+## Published images and releases
+
+The platform is one image (`ghcr.io/<owner>/sentinellite`) for every service; only the command differs.
+`.github/workflows/release.yml` builds it for **amd64 and arm64** and pushes it:
+
+- when a version tag is pushed (`git tag v0.1.0 && git push origin v0.1.0`): tags `0.1.0`, `0.1` and `latest`;
+- by hand (Actions > Release images > Run workflow): `edge`, to try a branch.
+
+Users run it with `docker compose -f docker-compose.yml -f docker-compose.images.yml up -d`
+(`SENTINEL_VERSION=v0.1.0` in `.env` pins a release, `SENTINEL_IMAGE` points at a mirror). The overlay
+sets `pull_policy: always` and drops the `build:` section, so nothing is compiled on the user's machine.
+The image also carries the agent wheel and its installer, served by the API under `/agent`
+(`curl https://SIEM/agent/install.sh | sudo bash -s -- --server https://SIEM --key KEY`); they are public
+by design (same files as the repository) and the routes never build a path from the request.
+
+A GHCR package is **private by default, even for a public repository**: after the first release, open the
+package's settings on GitHub and set its visibility to *public*, or users must `docker login ghcr.io`.
+
+## Removing test data
+
+Alerts stay in the database, which is what you want for evidence, but a test can leave some you would
+rather not keep (for example an SSH loop run against `127.0.0.1`). Look first, then delete in one
+transaction that refuses to go on if the counts are not what you expect (append-only tables such as the
+audit log are left alone on purpose):
+
+```bash
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB"' <<'SQL'
+SELECT rule_id, src_ip, ts FROM alerts WHERE src_ip = '127.0.0.1';          -- look
+BEGIN;
+DELETE FROM alerts WHERE src_ip = '127.0.0.1' AND incident_id IS NULL;       -- prints DELETE n: is n what you saw above?
+DELETE FROM events WHERE src_ip = '127.0.0.1';
+COMMIT;   -- or ROLLBACK; if the counts printed are not the ones you expected
+SQL
+```
+
+An alert attached to an incident is kept (`incident_id IS NULL`): unlink it from the incident first.
+
 ## Security report
 
 `sentinel report` writes one self-contained HTML page (no script, nothing loaded from elsewhere) for the

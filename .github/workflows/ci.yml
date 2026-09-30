@@ -63,6 +63,8 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run mypy src tests
       - run: uv run pytest -q
+      # The installer is run as root on other people's servers: lint it (shellcheck is on the runner).
+      - run: shellcheck -x install-agent.sh
 
   frontend:
     runs-on: ubuntu-latest

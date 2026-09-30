@@ -80,13 +80,29 @@ The second line matters: by default the dashboard cookie is only sent over HTTPS
 plain `http://` would silently loop. Set it to `false` for a local trial, and **remove it (or set `true`)
 as soon as the dashboard is reachable over HTTPS**.
 
-Start everything:
+Start everything. Either use the **published image** (fast, nothing to build):
 
 ```bash
-docker compose up -d --build       # the first build takes a few minutes
+docker compose -f docker-compose.yml -f docker-compose.images.yml up -d
+# tip: put COMPOSE_FILE=docker-compose.yml:docker-compose.images.yml in .env, then plain `docker compose up -d` works
+```
+
+or **build it from the source** (a few minutes the first time):
+
+```bash
+docker compose up -d --build
+```
+
+Then check:
+
+```bash
 docker compose ps                  # api, normalizer, detector, watchdog: Up; migrate: Exited (0)
 curl http://127.0.0.1:8000/healthz # {"status":"ok","version":"0.1.0"}
 ```
+
+The published image is `ghcr.io/yassineeljal/sentinellite` (amd64 and arm64), one image for every service; pin
+a release with `SENTINEL_VERSION=v0.1.0` in `.env`. It exists once a version has been tagged: while the
+repository or package is private you first need `docker login ghcr.io`.
 
 By design the API is published on `127.0.0.1:8000` only. **Never set `SENTINEL_BIND_ADDR` to `0.0.0.0`**:
 that would put your SIEM on the network without HTTPS. To reach it from elsewhere, put a reverse proxy
@@ -119,53 +135,39 @@ docker compose exec api sentinel agents create --name my-server --os linux
 The key identifies this one agent. If you lose it, revoke the agent (`sentinel agents revoke <id>`) and
 create another.
 
-### 5.2 Build the agent
+### 5.2 Install it on the monitored server: one command
 
-On any machine that has this repository (the agent has no dependency, it is one small wheel):
-
-```bash
-cd SentinelLite/agents/linux
-python3 -m pip wheel --no-deps -w /tmp/dist .     # or: uv build
-ls /tmp/dist                                      # sentinel_agent-0.1.0-py3-none-any.whl
-```
-
-Copy three files to the server you want to watch (`scp`): that `.whl`, `agents/linux/deploy/agent.toml.example`
-and `agents/linux/deploy/sentinel-agent.service`.
-
-### 5.3 Install it on the monitored server
+The platform serves its own agent, so the version always matches. On the **server you want to watch**:
 
 ```bash
-sudo useradd --system --home-dir /var/lib/sentinel-agent --shell /usr/sbin/nologin sentinel-agent
-sudo usermod -aG adm sentinel-agent                       # lets it read /var/log/auth.log
-sudo python3 -m venv /opt/sentinel-agent
-sudo /opt/sentinel-agent/bin/pip install sentinel_agent-0.1.0-py3-none-any.whl
-
-sudo install -d -m 0750 -o root -g sentinel-agent /etc/sentinel-agent
-sudo install -m 0640 -g sentinel-agent agent.toml.example /etc/sentinel-agent/agent.toml
-sudo editor /etc/sentinel-agent/agent.toml
+curl -fsSL https://siem.example.com/agent/install.sh | sudo bash -s -- \
+    --server https://siem.example.com --key <the key>
 ```
 
-In `agent.toml`, set `url` to where the platform can be reached **from this server**:
+(Platform and server on the same machine: `--server http://127.0.0.1:8000`.) To keep the key out of the
+process list and your shell history, pass it in the environment instead:
+`curl -fsSL … | sudo SENTINEL_AGENT_KEY=<the key> bash -s -- --server https://siem.example.com`.
 
-| Situation | `[server] url` |
-|---|---|
-| Platform and server are the same machine | `http://127.0.0.1:8000` |
-| Platform elsewhere, behind HTTPS (recommended) | `https://siem.example.com` |
-| A private lab network without HTTPS | `http://<platform address>:8000`, and start the platform with `SENTINEL_BIND_ADDR=<its private address>`. The agent warns that it sends the key in clear |
+You are piping a script into a root shell: read it first if you like
+(`curl -fsSL https://siem.example.com/agent/install.sh | less`, it is about 200 readable lines, and
+`--help` lists every option).
 
-Leave `key_file = "/etc/sentinel-agent/key"` and the `[[sources]]` block for `auth.log` as they are.
-Then store the key from step 5.1 in a private file and start the service:
+What it does, in order: checks that Python 3.11+ and `venv` are there and that the platform answers;
+creates the unprivileged `sentinel-agent` account (in the `adm` group, to read `auth.log`); installs the
+agent into `/opt/sentinel-agent`; writes `/etc/sentinel-agent/agent.toml` and the key (readable by the
+agent only); installs and starts the hardened `systemd` service, and confirms it stays up. It is safe to
+run again: it upgrades the agent and keeps your configuration and key (`--force` rewrites them).
 
-```bash
-printf '%s' '<the key>' | sudo tee /etc/sentinel-agent/key >/dev/null
-sudo chown sentinel-agent: /etc/sentinel-agent/key && sudo chmod 600 /etc/sentinel-agent/key
-
-sudo install -m 0644 sentinel-agent.service /etc/systemd/system/sentinel-agent.service
-sudo systemctl daemon-reload && sudo systemctl enable --now sentinel-agent
-journalctl -u sentinel-agent -f       # "sentinel-agent 0.1.0 -> <url>, 1 source(s)"
-```
+Useful options: `--traefik-log /var/log/traefik/access.log` to also ship the web access log,
+`--start-at beginning` to ship the existing history too, `--no-service` to install the files without
+`systemd` (containers), `--uninstall` (and `--purge` to remove the key and configuration as well).
 
 A new agent starts at the **end** of the log: it ships what happens from now on, not the history.
+
+### 5.3 Manual installation
+
+Prefer to do it by hand, or on a distribution the script does not know? The same steps, one by one, are in
+[`AGENT.md`](AGENT.md#install-ubuntu--debian).
 
 ## 6. Check that data flows
 
@@ -350,6 +352,7 @@ enforced, flush the chain with `sudo iptables -F SENTINEL` first.
 | The agent is up, but no alert appears | Are lines arriving? `docker compose logs normalizer`. Is the log path right for your distribution? Does `sentinel-agent` belong to the `adm` group (`id sentinel-agent`)? Did you attack from the server itself (use another machine)? |
 | Lots of "dead letters" | Lines the platform cannot parse, for example an unsupported source: `docker compose logs normalizer` |
 | Ingestion answers `429` | The queue is full: the normalizer is down or slow, `docker compose ps` |
+| Test alerts you want gone | See [Removing test data](OPERATIONS.md#removing-test-data) |
 | Blocked yourself in `enforce` | From the console: `sudo iptables -F SENTINEL`; then add your address to `never_block` and to the allowlist |
 
 More: [`OPERATIONS.md`](OPERATIONS.md#troubleshooting).

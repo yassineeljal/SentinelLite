@@ -13,6 +13,34 @@ Entry template:
 
 ---
 
+## 2026-09-30 — Distribution — Published images, a one-command agent installer, test data cleanup
+
+**What**
+- **Image**: the Dockerfile now builds the agent wheel (new stage) and keeps it, with the installer, in `/app/agent-dist`. `.github/workflows/release.yml` publishes one multi-architecture image (amd64 + arm64) to GHCR on a version tag (`latest`, `0.1.0`, `0.1`) or by hand (`edge`). `deploy/docker-compose.images.yml` is an overlay that uses it (`pull_policy: always`, `build: !reset null`): `docker compose -f docker-compose.yml -f docker-compose.images.yml up -d`, nothing to build.
+- **Agent installer**: `agents/linux/install-agent.sh`, served by the API at `/agent/install.sh` with the wheel (`/agent/wheel-name`, `/agent/wheel/<name>`): `curl -fsSL https://SIEM/agent/install.sh | sudo bash -s -- --server https://SIEM --key KEY`. Idempotent (an upgrade keeps config and key), `--uninstall`/`--purge`, `--no-service`, `--traefik-log`, key from a file or the environment. The unit files now ship inside the wheel (single source of truth). `shellcheck` runs in CI.
+- **Test data**: the three alerts (and twelve events) left in production by the tutorial's `127.0.0.1` SSH test were deleted in a guarded transaction (aborts unless the counts are exactly 3 and 12, none attached to an incident); the procedure is documented (OPERATIONS.md, "Removing test data").
+
+**Why**
+Nobody could use the project without cloning it, building an image for several minutes and installing the agent by hand in a dozen steps.
+
+**How verified**
+- The image was built and the API run from it: `install.sh` (`text/x-shellscript`), `wheel-name`, and the wheel are served, the wheel byte-identical to one built from the source; a traversal attempt reaches nothing but the dashboard's page. 15 API tests (public, wrong or traversing names refused, newest wheel offered, platform without the agent answers 404).
+- **The installer was run in a real Ubuntu 24.04 container with systemd**, fetching everything from that API: account, venv, wheel, configuration (`0640 root:sentinel-agent`), key (`0600`), hardened unit, service up and staying up; a second run kept the configuration and key; error messages for no key, a malformed key, a server with a path, an unreachable server; `--uninstall` kept the configuration, `--purge` removed everything including the account.
+- `docker compose config` on the overlay: no `build:` left, every service on the published image; valid together with the VPS overlay.
+
+**Problems & lessons**
+- A wheel must keep its real file name (pip checks it), so the installer asks the platform for the name first instead of hard-coding a version.
+- The traversal probe returned `200`: not a leak, the single-page app answers `200` to any unknown path. I checked the body rather than trusting the status (the same lesson as the web rule).
+- A GHCR package is private by default even for a public repository (documented).
+
+**Not done yet / limits**
+- The installer is verified on Ubuntu 24.04 only, and installs the agent, not the firewall enforcer.
+- The first tagged release, and the check that a stranger can pull the image, come after this merge.
+
+**Next**: tag `v0.1.0`, watch the release workflow, make the package public when the repository is.
+
+---
+
 ## 2026-09-30 — Docs — A tutorial and a README for newcomers
 
 **What**

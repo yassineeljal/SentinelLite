@@ -8,6 +8,13 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 COPY frontend/ ./
 RUN npm run build
 
+# The log agent, as a wheel, plus its installer: the platform serves them under /agent so that one
+# `curl | sudo bash` installs the agent that matches it (api/agent_download.py).
+FROM python:3.12-slim AS agent-builder
+WORKDIR /src
+COPY agents/linux/ ./
+RUN pip wheel --no-cache-dir --no-deps -w /dist .
+
 FROM python:3.12-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
@@ -30,7 +37,10 @@ COPY backend/alembic.ini ./alembic.ini
 COPY backend/migrations ./migrations
 COPY rules ./rules
 COPY --from=frontend-builder /app/dist ./static
-ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 SENTINEL_STATIC_DIR=/app/static
+COPY --from=agent-builder /dist ./agent-dist
+COPY agents/linux/install-agent.sh ./agent-dist/install.sh
+ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 SENTINEL_STATIC_DIR=/app/static \
+    SENTINEL_AGENT_DIST_DIR=/app/agent-dist
 USER sentinel
 EXPOSE 8000
 CMD ["uvicorn", "sentinel_core.api.main:create_app", "--factory", "--no-proxy-headers", "--host", "0.0.0.0", "--port", "8000"]

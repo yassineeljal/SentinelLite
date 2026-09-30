@@ -1,0 +1,28 @@
+# Use the published image instead of building from the source.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.images.yml up -d
+#
+# (or put COMPOSE_FILE=docker-compose.yml:docker-compose.images.yml in .env, then plain `docker compose up -d`).
+# One image serves every service below: only the command differs. Pin a release with
+# SENTINEL_VERSION=v0.1.0 in .env; the default is `latest`. To use your own build or a mirror, set
+# SENTINEL_IMAGE. `pull_policy: always` makes `up` fetch a newer image when there is one.
+x-published: &published
+  image: ${SENTINEL_IMAGE:-ghcr.io/yassineeljal/sentinellite}:${SENTINEL_VERSION:-latest}
+  pull_policy: always
+  build: !reset null
+
+services:
+  migrate:
+    <<: *published
+  normalizer:
+    <<: *published
+  detector:
+    <<: *published
+  enricher:
+    <<: *published
+  responder:
+    <<: *published
+  watchdog:
+    <<: *published
+  api:
+    <<: *published
