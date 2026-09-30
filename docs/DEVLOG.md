@@ -13,6 +13,29 @@ Entry template:
 
 ---
 
+## 2026-09-30 — Frontend — Visual redesign (and how it slipped into `main`)
+
+**What**
+- A design system for the dashboard: tokens for a light and a dark theme (system by default, a switch in the top bar remembers the choice), a four-level severity scale used by badges and the map, primary / neutral / danger buttons, consistent forms, tables in scrollable cards, banners for errors and notices, a sticky navigation that marks the current page, a project favicon (the repository still had Vite's default one). Two small structure changes: severity is a badge in the alerts table, and lifting a block or removing an allowlist entry is styled as destructive. Documented in DASHBOARD.md.
+
+**Why**
+The first dashboard was dark-only, with unstyled controls and no shared visual language.
+
+**How verified**
+- 141 frontend tests (61 new): the theme module (storage, blocked storage, system preference), the top bar (current page, theme switch, sign out), badges and danger buttons, and **46 tests that compute the colours**: every text/background pair reaches WCAG AA (4.5:1) in both themes, both themes define the same tokens, the two copies of the dark theme are identical. That test caught a real defect: the white text of the red buttons was unreadable in the dark theme, so the button text became a token (`--danger-contrast`). Typecheck, lint, format and build clean; the CI frontend job passed.
+
+**Problems & lessons**
+- **It reached `main` by accident.** I built it on a branch and deployed that branch to the VPS for a look, but never committed it; later, `git add -A` for an unrelated documentation PR swept the uncommitted files into it (PR #44, "a tutorial and a README"). The CI was green so nothing stopped it, and it was merged under the wrong label without the review I had promised. Found a day later when asked to "merge the redesign". Two takeaways: `git add -A` on a working tree with unrelated changes is a bug waiting to happen (stage by path, or read `git status` before it), and a branch that exists only as uncommitted files is not a branch.
+- I still have not seen how it renders (no browser on the server): the arithmetic of the colours is tested, the layout is not.
+
+**Not done yet / limits**
+- No feedback from a human eye yet on spacing, density or the mobile layout; no screenshots in the repository.
+- Alerts have no search or filter beyond the rule id; the map and MITRE pages were only recoloured.
+
+**Next**: a look at each page in both themes and on a phone, then the alert triage flow (filters, quick actions).
+
+---
+
 ## 2026-09-30 — Distribution — Published images, a one-command agent installer, test data cleanup
 
 **What**

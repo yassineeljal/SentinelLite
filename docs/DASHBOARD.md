@@ -212,6 +212,18 @@ framework code beyond what `api/client.ts` and `auth/AuthContext.tsx` need: no s
 library, no component kit — the surface is still small enough that plain React + `fetch` is the
 simplest thing that works, and will be revisited if that stops being true.
 
+**Look and feel.** One stylesheet (`src/index.css`) built on design tokens: colours, radii and shadows are
+only ever used through CSS variables, in a light and a dark theme. The theme follows the system by
+default; the button in the top bar forces one and remembers the choice (`localStorage`, guarded: the app
+still works when storage is blocked, `src/theme.ts`). Severity and risk share one four-level scale
+(low, medium, high, critical), also used for the map points; states (a block's mode, an incident's
+status) are badges; a submit button is the primary action and `.danger` marks destructive ones; tables
+scroll sideways inside a card on a small screen; the current page is marked in the navigation
+(`aria-current`), focus is always visible and animations are switched off for people who ask for it.
+Because the colours cannot be looked at from a test, `designTokens.test.ts` computes them: every
+text/background pair the stylesheet uses must reach WCAG AA (4.5:1) in **both** themes, and the two copies
+of the dark theme in the CSS must stay identical.
+
 **Same origin, on purpose** (ADR 35): the API serves the built app directly (a catch-all route
 falls back to `index.html` for client-routed paths like `/alerts`, so a hard refresh or a pasted
 link still works), and `vite.config.ts` proxies `/v1` to the backend in dev for the same reason —
