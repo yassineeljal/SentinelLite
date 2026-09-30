@@ -168,8 +168,9 @@ optionally, a Traefik access log. There is no Windows agent by design.
 **Does it store logs forever?** Events go into daily partitions; nothing purges old ones yet, so watch
 the database size ([`OPERATIONS.md`](docs/OPERATIONS.md)).
 
-**Do I have to build the image?** No: a published multi-architecture image (amd64, arm64) exists once a
-version is tagged (`docker-compose.images.yml`); building from the source stays possible.
+**Do I have to build the image?** No: a multi-architecture image (amd64, arm64) is published on each version tag
+(`ghcr.io/yassineeljal/sentinellite`, first release `0.1.0`; use `docker-compose.images.yml`). Building from
+the source stays possible.
 
 **Why an agent outside Docker?** It reads the machine's real log files and changes its real firewall; a
 container would be cut off from both.
