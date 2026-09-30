@@ -31,7 +31,7 @@ sources, one instance, no high availability. The [comparison](docs/COMPARISON.md
 | Attack scenarios detected | **67 / 67** |
 | Scenarios matching their exact expected alert count | **118 / 118** |
 | False alerts on 1 050 replayed benign events | **0** |
-| Automated tests | **1 343** backend (real Redis and PostgreSQL in CI) + **173** agent + **80** frontend; `mypy --strict`, `ruff` |
+| Automated tests | **1 343** backend (real Redis and PostgreSQL in CI) + **173** agent + **141** frontend; `mypy --strict`, `ruff` |
 | Attack → alert latency, SSH (real `hydra` → `sshd` → agent → alert) | **7.4 s** |
 | Attack → alert latency, web (probe sweep on the live VPS) | **< 0.4 s** after the event reaches the platform |
 
