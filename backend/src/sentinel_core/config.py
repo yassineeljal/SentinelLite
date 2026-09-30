@@ -108,6 +108,10 @@ class Settings(BaseSettings):
                 raise ValueError("MFA encryption key must be a valid Fernet key") from None
         return value
 
+    # Where the image keeps the agent wheel and its installer script (served under /agent, see
+    # api/agent_download.py). None: not offered (tests, local development).
+    agent_dist_dir: Path | None = None
+
     # Built frontend (frontend/dist) to serve, if any: None means API-only (tests, local dev
     # against `npm run dev`'s own server). The Docker image sets this; docker-compose.yml does not
     # need to, since the image default already matches where the build stage puts it.

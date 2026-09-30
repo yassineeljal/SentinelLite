@@ -31,7 +31,7 @@ sources, one instance, no high availability. The [comparison](docs/COMPARISON.md
 | Attack scenarios detected | **67 / 67** |
 | Scenarios matching their exact expected alert count | **118 / 118** |
 | False alerts on 1 050 replayed benign events | **0** |
-| Automated tests | **1 328** backend (real Redis and PostgreSQL in CI) + **173** agent + **80** frontend; `mypy --strict`, `ruff` |
+| Automated tests | **1 343** backend (real Redis and PostgreSQL in CI) + **173** agent + **80** frontend; `mypy --strict`, `ruff` |
 | Attack → alert latency, SSH (real `hydra` → `sshd` → agent → alert) | **7.4 s** |
 | Attack → alert latency, web (probe sweep on the live VPS) | **< 0.4 s** after the event reaches the platform |
 
@@ -113,15 +113,22 @@ git clone https://github.com/yassineeljal/SentinelLite.git && cd SentinelLite/de
 cp .env.example .env
 # edit .env: set POSTGRES_PASSWORD, and for a first try over plain http://localhost also
 #            SENTINEL_SESSION_COOKIE_SECURE=false   (remove it once you use HTTPS)
-docker compose up -d --build         # postgres, redis, migrations, api, normalizer, detector, watchdog
+docker compose -f docker-compose.yml -f docker-compose.images.yml up -d   # the published image: nothing to build
+#   (or `docker compose up -d --build` to build from the source)
 docker compose exec api sentinel users create --email you@example.com --role admin
 docker compose exec api sentinel agents create --name my-host --os linux   # prints the agent key once
 ```
 
-Open <http://127.0.0.1:8000> and sign in. Then install the agent on the Linux server you want to watch
-([tutorial, step 5](docs/TUTORIAL.md#5-register-and-install-an-agent)): the platform runs in Docker, the
-agent is a small `systemd` service because it has to read the host's real logs and, if you enable the
-response, edit its firewall.
+Open <http://127.0.0.1:8000> and sign in. Then, **on the Linux server you want to watch**, one command
+installs the agent (the platform serves it, so the versions always match):
+
+```bash
+curl -fsSL https://YOUR-PLATFORM/agent/install.sh | sudo bash -s -- --server https://YOUR-PLATFORM --key <the key>
+```
+
+The platform runs in Docker; the agent is a small hardened `systemd` service, because it has to read the
+host's real logs and, if you enable the response, edit its firewall. Details:
+[tutorial, step 5](docs/TUTORIAL.md#5-register-and-install-an-agent).
 
 Other entry points: run the detection benchmark without any service (`cd backend && uv run sentinel bench`),
 try a real attack in a lab with Kali and `hydra` ([`lab/README.md`](lab/README.md)), or see the
@@ -160,6 +167,9 @@ optionally, a Traefik access log. There is no Windows agent by design.
 
 **Does it store logs forever?** Events go into daily partitions; nothing purges old ones yet, so watch
 the database size ([`OPERATIONS.md`](docs/OPERATIONS.md)).
+
+**Do I have to build the image?** No: a published multi-architecture image (amd64, arm64) exists once a
+version is tagged (`docker-compose.images.yml`); building from the source stays possible.
 
 **Why an agent outside Docker?** It reads the machine's real log files and changes its real firewall; a
 container would be cut off from both.

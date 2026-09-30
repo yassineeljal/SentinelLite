@@ -52,6 +52,15 @@ does not replay a year of history; use `"beginning"` to ship existing content.
 
 ## Install (Ubuntu / Debian)
 
+**One command** (the platform serves the agent and this script; see the
+[tutorial](TUTORIAL.md#52-install-it-on-the-monitored-server-one-command)):
+
+```bash
+curl -fsSL https://SIEM/agent/install.sh | sudo bash -s -- --server https://SIEM --key AGENT_KEY
+```
+
+The manual steps it automates:
+
 ```bash
 # On a development machine: build the wheel
 cd agents/linux && uv build                       # dist/sentinel_agent-0.1.0-py3-none-any.whl
