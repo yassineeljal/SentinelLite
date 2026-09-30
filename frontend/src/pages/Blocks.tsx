@@ -128,11 +128,21 @@ export function Blocks() {
               {blocks.map((block) => (
                 <tr key={block.id}>
                   <td title={block.reason}>{block.ip}</td>
-                  <td>{modeLabels[block.mode]}</td>
                   <td>
-                    {block.state === "released" && block.released_by
-                      ? `Released by ${block.released_by}`
-                      : block.state[0].toUpperCase() + block.state.slice(1)}
+                    <span
+                      className={`badge ${block.mode === "enforce" ? "badge-bad" : "badge-muted"}`}
+                    >
+                      {modeLabels[block.mode]}
+                    </span>
+                  </td>
+                  <td>
+                    <span
+                      className={`badge ${block.state === "active" ? "badge-warn" : "badge-muted"}`}
+                    >
+                      {block.state === "released" && block.released_by
+                        ? `Released by ${block.released_by}`
+                        : block.state[0].toUpperCase() + block.state.slice(1)}
+                    </span>
                   </td>
                   <td>{block.rule_id}</td>
                   <td>{new Date(block.created_at).toLocaleString()}</td>
@@ -144,6 +154,7 @@ export function Blocks() {
                           <>
                             <button
                               type="button"
+                              className="danger"
                               disabled={busy}
                               onClick={() =>
                                 void run(() => unblockAddress(block.ip), "Could not unblock")
@@ -197,6 +208,7 @@ export function Blocks() {
                     <td>
                       <button
                         type="button"
+                        className="danger"
                         disabled={busy}
                         onClick={() =>
                           void run(() => removeAllowlist(entry.cidr), "Could not remove the entry")

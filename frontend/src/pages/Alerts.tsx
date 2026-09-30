@@ -63,54 +63,60 @@ export function Alerts() {
       {alerts === null && !error && <p className="status">Loading…</p>}
       {alerts !== null && alerts.length === 0 && <p className="status">No alerts.</p>}
       {alerts !== null && alerts.length > 0 && (
-        <table>
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Severity</th>
-              <th>Risk</th>
-              <th>Rule</th>
-              <th>Host</th>
-              <th>User</th>
-              <th>Source</th>
-              <th>Country</th>
-              <th>Abuse</th>
-              <th>Count</th>
-            </tr>
-          </thead>
-          <tbody>
-            {alerts.map((alert) => (
-              <tr
-                key={alert.alert_id}
-                className="clickable-row"
-                onClick={() => navigate(`/alerts/${alert.alert_id}`)}
-              >
-                <td>{formatTime(alert.ts)}</td>
-                <td>{alert.severity}</td>
-                <td>
-                  {alert.risk_score === null ? (
-                    "—"
-                  ) : (
-                    <span className={`risk risk-${riskLevel(alert.risk_score)}`}>
-                      {alert.risk_score}
-                    </span>
-                  )}
-                </td>
-                <td>
-                  <Link to={`/alerts/${alert.alert_id}`} title={alert.title}>
-                    {alert.rule_id}
-                  </Link>
-                </td>
-                <td>{alert.host ?? "—"}</td>
-                <td>{alert.user_name ?? "—"}</td>
-                <td>{alert.src_ip ?? "—"}</td>
-                <td>{alert.country_code ?? "—"}</td>
-                <td>{alert.abuse_score ?? "—"}</td>
-                <td>{alert.match_count}</td>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Severity</th>
+                <th>Risk</th>
+                <th>Rule</th>
+                <th>Host</th>
+                <th>User</th>
+                <th>Source</th>
+                <th>Country</th>
+                <th>Abuse</th>
+                <th>Count</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {alerts.map((alert) => (
+                <tr
+                  key={alert.alert_id}
+                  className="clickable-row"
+                  onClick={() => navigate(`/alerts/${alert.alert_id}`)}
+                >
+                  <td>{formatTime(alert.ts)}</td>
+                  <td>
+                    <span className={`risk risk-${riskLevel(alert.severity)}`}>
+                      {alert.severity}
+                    </span>
+                  </td>
+                  <td>
+                    {alert.risk_score === null ? (
+                      "—"
+                    ) : (
+                      <span className={`risk risk-${riskLevel(alert.risk_score)}`}>
+                        {alert.risk_score}
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    <Link to={`/alerts/${alert.alert_id}`} title={alert.title}>
+                      {alert.rule_id}
+                    </Link>
+                  </td>
+                  <td>{alert.host ?? "—"}</td>
+                  <td>{alert.user_name ?? "—"}</td>
+                  <td>{alert.src_ip ?? "—"}</td>
+                  <td>{alert.country_code ?? "—"}</td>
+                  <td>{alert.abuse_score ?? "—"}</td>
+                  <td>{alert.match_count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </main>
   );

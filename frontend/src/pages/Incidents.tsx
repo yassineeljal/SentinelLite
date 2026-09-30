@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError, createIncident, listIncidents } from "../api/client";
 import type { Incident, IncidentStatus } from "../api/types";
 
-import { statusLabels } from "../incidentStatus";
+import { statusBadge, statusLabels } from "../incidentStatus";
 
 export function Incidents() {
   const navigate = useNavigate();
@@ -131,7 +131,11 @@ export function Incidents() {
                   <td>
                     <Link to={`/incidents/${incident.id}`}>{incident.title}</Link>
                   </td>
-                  <td>{statusLabels[incident.status]}</td>
+                  <td>
+                    <span className={`badge ${statusBadge[incident.status]}`}>
+                      {statusLabels[incident.status]}
+                    </span>
+                  </td>
                   <td>{incident.assignee_email ?? "Unassigned"}</td>
                   <td>{incident.alert_count}</td>
                   <td>{incident.max_risk_score ?? "Not scored"}</td>
