@@ -173,4 +173,19 @@ describe("Blocks", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("boom");
   });
+
+  it("colours modes and states and marks destructive buttons", async () => {
+    mockData([block, { ...block, id: 2, ip: "45.83.64.2", mode: "dry_run", state: "expired" }]);
+    renderPage("admin");
+    const user = userEvent.setup();
+
+    expect(await screen.findByText("Enforced")).toHaveClass("badge-bad");
+    expect(screen.getByText("Dry run (nothing applied)")).toHaveClass("badge-muted");
+    expect(screen.getByText("Active")).toHaveClass("badge-warn");
+    expect(screen.getByText("Expired")).toHaveClass("badge-muted");
+    expect(screen.getByRole("button", { name: "Remove 198.51.100.0/24" })).toHaveClass("danger");
+
+    await user.click(screen.getByRole("button", { name: "Unblock" }));
+    expect(screen.getByRole("button", { name: /Confirm unblock/ })).toHaveClass("danger");
+  });
 });

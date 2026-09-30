@@ -13,6 +13,30 @@ Entry template:
 
 ---
 
+## 2026-09-30 — Docs — A tutorial and a README for newcomers
+
+**What**
+- `docs/TUTORIAL.md`: from an empty machine to a first alert (prerequisites, platform, account, agent, checking the flow, triggering detections, reading an alert, the response in dry run then enforce, extras, updates, backup and restore, troubleshooting, uninstall).
+- README: who it is for and not for, a corrected "Get started" (it now says that plain `http://localhost` needs `SENTINEL_SESSION_COOKIE_SECURE=false`, else sign-in silently loops), a documentation map, an FAQ, and an honest licence note.
+
+**Why**
+The project runs and is measured; the next question is whether a stranger can use it.
+
+**How verified**
+- The tutorial's commands were run on the live deployment: agent registration and listing, the SSH test loop (exactly `ssh-invalid-user-flood`, `ssh-user-enumeration` and `ssh-slow-scan`, in under 0.5 s, no block for a loopback source), `pg_dump` and a **restore into a scratch database** (same row counts), the 2FA key generation inside the API image, the report, `sentinel unblock`. Every relative link and anchor in the README and the tutorial was checked by script.
+
+**Problems & lessons**
+- The old Quick start would have failed for anyone on plain HTTP: the session cookie is `Secure` by default. Found by reading the compose file while writing the tutorial, not by running a fresh install.
+- Not verified: a from-scratch install on a clean machine (the platform was not re-created for this).
+
+**Not done yet / limits**
+- No licence file, no published images, no one-command agent installer, and the repository is still private: the tutorial assumes a `git clone` and a local image build.
+- Nothing purges old events (documented as such).
+
+**Next**: choose a licence and publish images if the project is to be shared.
+
+---
+
 ## 2026-09-30 — Operations — GeoIP enabled on the VPS
 
 **What**

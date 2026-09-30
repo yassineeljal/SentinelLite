@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/yassineeljal/SentinelLite/actions/workflows/ci.yml/badge.svg)](https://github.com/yassineeljal/SentinelLite/actions/workflows/ci.yml)
 
+**[Tutorial](docs/TUTORIAL.md)** · [Three-minute demo](docs/DEMO.md) · [Architecture](docs/ARCHITECTURE.md) · [Benchmark](docs/BENCHMARK.md) · [Comparison with Wazuh](docs/COMPARISON.md)
+
 A small, self-hosted **SIEM** for Linux servers: agents ship SSH and web logs to a platform that
 normalizes them, detects attacks with rules mapped to **MITRE ATT&CK**, enriches alerts (GeoIP, IP
 reputation, explainable risk score), lets analysts triage them in a web dashboard, and blocks
@@ -10,6 +12,16 @@ attackers on the firewall, behind strict guardrails, with a full audit trail.
 It is built to be **measurable**: every rule ships with labelled attack, benign and near-miss
 scenarios, and CI fails if the detection benchmark drifts. It is also **running for real**: it
 monitors the public VPS it is hosted on, and a real block was applied and lifted there.
+
+## Who is it for?
+
+- **You run a few Linux servers** (a VPS, a homelab) and want to *see* who is scanning and guessing
+  passwords, and to block the persistent ones automatically, without operating a large product.
+- **You want to learn how a SIEM works**: it is small enough to read, every design decision is written
+  down with the alternatives that were rejected, and every detection is measured.
+
+It is **not** a replacement for a mature product on a large or regulated estate: Linux only, two log
+sources, one instance, no high availability. The [comparison](docs/COMPARISON.md) is candid about it.
 
 ## Numbers (reproducible: `sentinel bench`)
 
@@ -91,22 +103,72 @@ privileged key is stored on the platform. Design record: [`docs/ARCHITECTURE.md`
   Argon2id, server-side sessions, `HttpOnly`/`SameSite=Strict` cookies, no self-registration.
   [`docs/DASHBOARD.md`](docs/DASHBOARD.md)
 
-## Quick start
+## Get started
+
+The [**tutorial**](docs/TUTORIAL.md) walks through everything, from an empty machine to your first alert
+(about 30 minutes). The short version:
 
 ```bash
-cd deploy
-cp .env.example .env                 # set a strong POSTGRES_PASSWORD
+git clone https://github.com/yassineeljal/SentinelLite.git && cd SentinelLite/deploy
+cp .env.example .env
+# edit .env: set POSTGRES_PASSWORD, and for a first try over plain http://localhost also
+#            SENTINEL_SESSION_COOKIE_SECURE=false   (remove it once you use HTTPS)
 docker compose up -d --build         # postgres, redis, migrations, api, normalizer, detector, watchdog
 docker compose exec api sentinel users create --email you@example.com --role admin
 docker compose exec api sentinel agents create --name my-host --os linux   # prints the agent key once
-open http://localhost:8000
 ```
 
-Install the agent on a monitored host: [`docs/AGENT.md`](docs/AGENT.md). Run the detection benchmark
-without any service: `cd backend && uv run sentinel bench`. Optional: GeoIP enrichment, the responder
-(`dry_run` first), web access logs, Discord ([`docs/OPERATIONS.md`](docs/OPERATIONS.md)). A lab with a real
-attacker (Kali, `hydra`): [`lab/README.md`](lab/README.md). A three-minute walkthrough:
-[`docs/DEMO.md`](docs/DEMO.md).
+Open <http://127.0.0.1:8000> and sign in. Then install the agent on the Linux server you want to watch
+([tutorial, step 5](docs/TUTORIAL.md#5-register-and-install-an-agent)): the platform runs in Docker, the
+agent is a small `systemd` service because it has to read the host's real logs and, if you enable the
+response, edit its firewall.
+
+Other entry points: run the detection benchmark without any service (`cd backend && uv run sentinel bench`),
+try a real attack in a lab with Kali and `hydra` ([`lab/README.md`](lab/README.md)), or see the
+[three-minute demo](docs/DEMO.md).
+
+## Documentation
+
+| I want to… | Read |
+|---|---|
+| Install it and get my first alert | [`docs/TUTORIAL.md`](docs/TUTORIAL.md) |
+| Run and administer it (backups, updates, response, Discord, GeoIP, web logs) | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) |
+| Install and configure the agent and the firewall enforcer | [`docs/AGENT.md`](docs/AGENT.md) |
+| Write or change a detection rule | [`docs/DETECTION.md`](docs/DETECTION.md), event catalogue in [`docs/EVENTS.md`](docs/EVENTS.md) |
+| Use the dashboard, accounts and 2FA | [`docs/DASHBOARD.md`](docs/DASHBOARD.md) |
+| Understand the design and its trade-offs | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (42 decisions), [`docs/DEVLOG.md`](docs/DEVLOG.md) |
+| Talk to the ingestion API | [`docs/INGESTION_API.md`](docs/INGESTION_API.md) |
+| Check the detection figures | [`docs/BENCHMARK.md`](docs/BENCHMARK.md) |
+
+## FAQ
+
+**Does it block attackers on its own?** Only if you turn it on, and it starts in `dry_run`: it records
+what it *would* block and touches nothing. Enforcing needs a separate service on each server, an
+allowlist that always wins, and a limited lifetime for every block.
+
+**Can it lock me out?** It is designed not to (private and loopback ranges are never blocked, your own
+addresses go in an allowlist and in the agent's `never_block`), and a block is undone with one command
+(`sentinel unblock`) or, if the platform is down, `iptables -F SENTINEL` on the server. Still: allowlist
+your own address *before* enabling anything.
+
+**Does any data leave my server?** No, by default. GeoIP is a local database. AbuseIPDB reputation is off
+unless you give it a key, and it then sends the public source address of alerts to abuseipdb.com. Discord
+notifications go to the webhook you configure.
+
+**Which systems can it monitor?** Linux servers with `sshd` (Ubuntu 24.04 is the tested one) and,
+optionally, a Traefik access log. There is no Windows agent by design.
+
+**Does it store logs forever?** Events go into daily partitions; nothing purges old ones yet, so watch
+the database size ([`OPERATIONS.md`](docs/OPERATIONS.md)).
+
+**Why an agent outside Docker?** It reads the machine's real log files and changes its real firewall; a
+container would be cut off from both.
+
+## License and contributing
+
+No license has been chosen yet, so for now all rights are reserved: please open an issue before reusing
+the code. Bug reports and questions are welcome as GitHub issues. Security problems: please do not post
+them publicly, contact the maintainer directly.
 
 ## Engineering notes
 

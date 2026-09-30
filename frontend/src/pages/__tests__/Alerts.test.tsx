@@ -49,6 +49,22 @@ function renderAlertsWithDetailRoute() {
 }
 
 describe("Alerts", () => {
+  it("colours the rule severity like the risk score, by level", async () => {
+    vi.spyOn(api, "listAlerts").mockResolvedValue([
+      alert({ alert_id: "1".repeat(64), severity: 30, risk_score: null }),
+      alert({ alert_id: "2".repeat(64), severity: 45, risk_score: null }),
+      alert({ alert_id: "3".repeat(64), severity: 75, risk_score: null }),
+      alert({ alert_id: "4".repeat(64), severity: 96, risk_score: null }),
+    ]);
+
+    renderAlerts();
+
+    expect(await screen.findByText("30")).toHaveClass("risk-low");
+    expect(screen.getByText("45")).toHaveClass("risk-medium");
+    expect(screen.getByText("75")).toHaveClass("risk-high");
+    expect(screen.getByText("96")).toHaveClass("risk-critical");
+  });
+
   it("renders a row per alert with its risk score", async () => {
     vi.spyOn(api, "listAlerts").mockResolvedValue([alert()]);
 

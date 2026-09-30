@@ -145,28 +145,30 @@ export function AlertDetail() {
 
           <section>
             <h2>Evidence ({detail.evidence.length})</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Action</th>
-                  <th>User</th>
-                  <th>Source</th>
-                  <th>Raw line</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.evidence.map((event) => (
-                  <tr key={event.ts + event.raw}>
-                    <td>{formatTime(event.ts)}</td>
-                    <td>{event.action}</td>
-                    <td>{event.user_name ?? "—"}</td>
-                    <td>{event.src_ip ?? "—"}</td>
-                    <td className="raw-line">{event.raw}</td>
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Action</th>
+                    <th>User</th>
+                    <th>Source</th>
+                    <th>Raw line</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {detail.evidence.map((event) => (
+                    <tr key={event.ts + event.raw}>
+                      <td>{formatTime(event.ts)}</td>
+                      <td>{event.action}</td>
+                      <td>{event.user_name ?? "—"}</td>
+                      <td>{event.src_ip ?? "—"}</td>
+                      <td className="raw-line">{event.raw}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </section>
         </>
       )}
